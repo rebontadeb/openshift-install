@@ -15,7 +15,7 @@ metadata:
 networking:
   clusterNetwork:
   - cidr: 10.128.0.0/14
-	hostPrefix: 23
+    hostPrefix: 23
   machineNetwork:
   - cidr: 172.20.131.0/24
   networkType: OVNKubernetes
