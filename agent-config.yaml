@@ -1,0 +1,95 @@
+apiVersion: v1alpha1
+kind: AgentConfig
+metadata:
+  name: gpu-cluster
+rendezvousIP: 172.20.131.20
+hosts:
+  - hostname: ocp-gpu-control1
+	role: master
+	interfaces:
+  	- name: ens1f0
+    	macAddress: 00:0e:1e:aa:e3:d0
+	rootDeviceHints:
+  	deviceName: /dev/sda
+	networkConfig:
+  	interfaces:
+    	- name: ens1f0
+      	type: ethernet
+      	state: up
+      	mac-address: 00:0e:1e:aa:e3:d0
+      	ipv4:
+        	enabled: true
+        	address:
+          	- ip: 172.20.131.20
+            	prefix-length: 24
+        	dhcp: false
+  	dns-resolver:
+    	config:
+         search: 
+           - openinfra.lab
+      	server:
+        	- 172.20.129.10
+  	routes:
+    	config:
+      	- destination: 0.0.0.0/0
+        	next-hop-address: 172.20.131.1
+        	next-hop-interface: ens1f0
+        	table-id: 254
+  - hostname: ocp-gpu-control2
+	role: master
+	interfaces:
+  	- name: ens1f0
+    	macAddress: 00:0e:1e:aa:de:20
+	rootDeviceHints:
+  	deviceName: /dev/sda
+	networkConfig:
+  	interfaces:
+    	- name: ens1f0
+      	type: ethernet
+      	state: up
+      	mac-address: 00:0e:1e:aa:de:20
+      	ipv4:
+        	enabled: true
+        	address:
+          	- ip: 172.20.131.21
+            	prefix-length: 24
+        	dhcp: false
+  	dns-resolver:
+    	config:
+      	server:
+        	- 172.20.129.10
+  	routes:
+    	config:
+      	- destination: 0.0.0.0/0
+        	next-hop-address: 172.20.131.1
+        	next-hop-interface: ens1f0
+        	table-id: 254
+  - hostname: ocp-gpu-control3
+	role: master
+	interfaces:
+  	- name: ens1f0
+    	macAddress: 00:0e:1e:aa:c6:a0
+	rootDeviceHints:
+  	deviceName: /dev/sda
+	networkConfig:
+  	interfaces:
+    	- name: ens1f0
+      	type: ethernet
+      	state: up
+      	mac-address: 00:0e:1e:aa:c6:a0
+      	ipv4:
+        	enabled: true
+        	address:
+          	- ip: 172.20.131.22
+            	prefix-length: 24
+        	dhcp: false
+  	dns-resolver:
+    	config:
+      	server:
+        	- 172.20.129.10
+  	routes:
+    	config:
+      	- destination: 0.0.0.0/0
+        	next-hop-address: 172.20.131.1
+        	next-hop-interface: ens1f0
+        	table-id: 254
