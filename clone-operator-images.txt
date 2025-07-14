@@ -1,0 +1,30 @@
+
+
+# Create ImageSetConfiguration
+cat << EOF > imageset-config.yaml
+apiVersion: mirror.openshift.io/v1alpha2
+kind: ImageSetConfiguration
+archiveSize: 4
+storageConfig:
+  registry:
+    imageURL: ${LOCAL_REGISTRY}/metadata:latest
+mirror:
+  platform:
+    channels:
+    - name: stable-4.19
+      minVersion: 4.19.0
+      maxVersion: 4.19.0
+      type: ocp
+    graph: true
+  operators:
+  - catalog: registry.redhat.io/redhat/certified-operator-index:v4.19
+  - catalog: registry.redhat.io/redhat/redhat-operator-index:v4.19
+  additionalImages:
+  - name: registry.redhat.io/ubi8/ubi:latest
+  helm: {}
+EOF
+
+# Mirror using oc-mirror
+oc mirror --config=./imageset-config.yaml docker://${LOCAL_REGISTRY}
+
+
