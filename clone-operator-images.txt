@@ -24,6 +24,29 @@ mirror:
   helm: {}
 EOF
 
+kind: ImageSetConfiguration
+apiVersion: mirror.openshift.io/v1alpha2
+storageConfig:
+  registry:
+    imageURL: airgapped.localregistry.com
+    skipTLS: false
+mirror:
+  platform:
+    channels:
+    - name: stable-4.19
+      type: ocp
+  operators:
+  - catalog: registry.redhat.io/redhat/redhat-operator-index:v4.20
+    packages:
+    - name: serverless-operator
+      channels:
+      - name: stable
+  additionalImages:
+  - name: registry.redhat.io/ubi8/ubi:latest
+  helm: {}
+
+
+
 # Mirror using oc-mirror
 oc mirror --config=./imageset-config.yaml docker://${LOCAL_REGISTRY}
 
