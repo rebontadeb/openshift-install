@@ -19,6 +19,7 @@ Download and install the following tools on your bastion host:
 version=4.19.0
 wget https://mirror.openshift.com/pub/openshift-v4/clients/ocp/${version}/openshift-client-linux.tar.gz
 wget https://mirror.openshift.com/pub/openshift-v4/clients/ocp/${version}/openshift-install-linux.tar.gz
+wget https://mirror.openshift.com/pub/openshift-v4/clients/ocp/${version}/oc-mirror.tar.gz
 
 # Extract tools
 tar -xzf openshift-client-linux.tar.gz
