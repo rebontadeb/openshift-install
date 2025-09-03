@@ -30,7 +30,7 @@ sudo mv oc kubectl openshift-install /usr/local/bin/
 
 # Download mirror registry
 wget https://developers.redhat.com/content-gateway/file/pub/openshift-v4/clients/mirror-registry/1.3.9/mirror-registry.tar.gz
-tar -xzf mirror-registry.tar.gz
+mkdir -p mirror-registry && tar -xzvf mirror-registry.tar.gz -C mirror-registry
 ```
 
 ## Step 1: Mirror Registry Creation with SSL
