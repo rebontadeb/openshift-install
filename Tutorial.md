@@ -15,7 +15,13 @@ This guide provides step-by-step instructions for installing OpenShift in a disc
 Download and install the following tools on your bastion host:
 
 ```bash
+dnf install nmstate wget tar ifconfig podman acl -y
+```
+
+```bash
 # Download OpenShift CLI tools
+mkdir softwares
+cd softwares
 version=4.19.0
 wget https://mirror.openshift.com/pub/openshift-v4/clients/ocp/${version}/openshift-client-linux.tar.gz
 wget https://mirror.openshift.com/pub/openshift-v4/clients/ocp/${version}/openshift-install-linux.tar.gz
@@ -30,7 +36,21 @@ sudo mv oc kubectl openshift-install /usr/local/bin/
 
 # Download mirror registry
 wget https://developers.redhat.com/content-gateway/file/pub/openshift-v4/clients/mirror-registry/1.3.9/mirror-registry.tar.gz
-mkdir -p mirror-registry && tar -xzvf mirror-registry.tar.gz -C mirror-registry
+mkdir -p ~/mirror-registry && tar -xzvf mirror-registry.tar.gz -C ~/mirror-registry/
+```
+
+Add pull secret in JSON https://console.redhat.com/openshift/downloads#tool-pull-secret 
+
+cat ./pull-secret.json | jq . > auth-pull-secret.json
+
+```
+echo -n 'admin:password' | base64 -w0
+```
+```
+"mirror.rebonta-registry.com": {
+"auth": "YWRtaW46cGFzc3dvcmQ=",
+"email": "rebontadeb@gmail.com"
+}
 ```
 
 ## Step 1: Mirror Registry Creation with SSL
@@ -57,6 +77,47 @@ openssl x509 -req -in /opt/registry/certs/domain.csr \
 
 # Create certificate bundle
 cp /opt/registry/certs/domain.crt /opt/registry/certs/ca-bundle.crt
+
+
+--------------------------------------------------------------------------------------------------------------------
+openssl genrsa -out rootCA.key 2048
+openssl req -x509 -new -nodes -key rootCA.key -sha256 -days 1024 -out rootCA.pem -subj "/C=BD/ST=Dhaka/L=Gulshan/O=TestOrg/OU=OrgUnit/CN=mirror.rebonta-registry.com"
+openssl genrsa -out ssl.key 2048
+openssl req -new -key ssl.key -out ssl.csr -subj "/C=BD/ST=Dhaka/L=Gulshan/O=TestOrg/OU=OrgUnit/CN=mirror.rebonta-registry.com"
+
+cat > openssl.cnf << EOF
+[req]
+req_extensions = v3_req
+distinguished_name = req_distinguished_name
+[req_distinguished_name]
+countryName = BD
+stateOrProvinceName = Dhaka
+localityName = Gulshan
+organizationName = TestOrg
+organizationalUnitName = OrgUnit
+commonName = mirror.rebonta-registry.com
+commonName_max = 64
+[v3_req]
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+[alt_names]
+
+DNS.1 = mirror.rebonta-registry.com
+DNS.2 = localhost
+IP.1 = 172.31.71.88
+IP.2 = 127.0.0.1
+EOF
+
+openssl x509 -req -in ssl.csr -CA rootCA.pem -CAkey rootCA.key -CAcreateserial -out ssl.crt -days 356 -extensions v3_req -extfile openssl.cnf
+sudo mkdir -p /etc/containers/certs.d/mirror.rebonta-registry.com/
+sudo cp rootCA.pem /etc/containers/certs.d/mirror.rebonta-registry.com/ca.crt
+sudo cp rootCA.pem /etc/pki/ca-trust/source/anchors/
+sudo update-ca-trust extract
+trust list | grep mirror.rebonta-registry.com
+--------------------------------------------------------------------------------------------------------------------
+
 ```
 
 ### 1.2 Install Mirror Registry
