@@ -4,9 +4,17 @@ mirror:
   platform:
     channels:
     - name: stable-4.19 
+      type: ocp
       minVersion: 4.19.0
       maxVersion: 4.19.0
     graph: true 
   operators:
     - catalog: registry.redhat.io/redhat/redhat-operator-index:v4.19
+      packages:
+        - name: kubevirt-hyperconverged
+        - name: mtv-operator
+        - name: lvms-operator
+        - name: local-storage-operator
     - catalog: registry.redhat.io/redhat/certified-operator-index:v4.19
+      packages:
+        - name: netapp-trident-operator
