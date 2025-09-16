@@ -1,10 +1,12 @@
 kind: ImageSetConfiguration
-apiVersion: mirror.openshift.io/v2alpha1
+apiVersion: mirror.openshift.io/v1alpha2
+storageConfig:
+  local:
+    path: ./oc_mirror
 mirror:
   platform:
     channels:
-    - name: stable-4.19 
-      type: ocp
+    - name: stable-4.19
       minVersion: 4.19.0
       maxVersion: 4.19.0
     graph: true 
@@ -12,7 +14,7 @@ mirror:
     - catalog: registry.redhat.io/redhat/redhat-operator-index:v4.19
       packages:
         - name: kubevirt-hyperconverged
-        - name: mtv-operator
+        - name: mtv-operator  
         - name: lvms-operator
         - name: local-storage-operator
     - catalog: registry.redhat.io/redhat/certified-operator-index:v4.19
