@@ -57,7 +57,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: nfs-client-provisioner
-    namespace: test-vm
+    namespace: nfs-client-provisioner
 roleRef:
   kind: ClusterRole
   name: nfs-client-provisioner-runner
