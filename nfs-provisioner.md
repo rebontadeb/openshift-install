@@ -135,5 +135,6 @@ spec:
 
 
 `oc adm policy add-scc-to-user privileged -z nfs-client-provisioner -n test-vm`
+
 `oc adm policy add-scc-to-user hostmount-anyuid system:serviceaccount:test-vm:nfs-client-provisioner`
 
