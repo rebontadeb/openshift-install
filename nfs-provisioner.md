@@ -116,3 +116,22 @@ spec:
       containers:
         - name: nfs-client-provisioner
           image: gcr.io/k8s-staging-sig-storage/nfs-subdir-external-provisioner:v4.0.0:latest
+          volumeMounts:
+            - name: nfs-client-root
+              mountPath: /persistentvolumes
+          env:
+            - name: PROVISIONER_NAME
+              value: nfs-provisioner
+            - name: NFS_SERVER
+              value: 10.3.103.251
+            - name: NFS_PATH
+              value: /OPEN_SHIFT      
+      volumes:
+        - name: nfs-client-root
+          nfs:
+            server: 10.3.103.251 
+            path: /OPEN_SHIFT   
+```
+
+
+`oc adm policy add-scc-to-user privileged -z nfs-client-provisioner -n test-vm`
