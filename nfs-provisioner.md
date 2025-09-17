@@ -95,6 +95,49 @@ roleRef:
 
 ---
 ```yaml
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: nfs-provisioner-scc
+allowHostDirVolumePlugin: false
+allowHostIPC: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostPorts: false
+allowPrivilegedContainer: false
+allowedCapabilities: null
+defaultAddCapabilities: null
+fsGroup:
+  type: RunAsAny
+groups: []
+priority: null
+readOnlyRootFilesystem: false
+requiredDropCapabilities:
+- KILL
+- MKNOD
+- SETUID
+- SETGID
+runAsUser:
+  type: RunAsAny
+seLinuxContext:
+  type: MustRunAs
+supplementalGroups:
+  type: RunAsAny
+users: []
+volumes:
+- configMap
+- downwardAPI
+- emptyDir
+- persistentVolumeClaim
+- projected
+- secret
+- nfs  # This allows NFS volumes
+```
+
+
+
+
+```yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -133,6 +176,8 @@ spec:
             path: /OPEN_SHIFT   
 ```
 
+
+`oc adm policy add-scc-to-user nfs-provisioner-scc -z nfs-client-provisioner`
 
 `oc adm policy add-scc-to-user privileged -z nfs-client-provisioner -n test-vm`
 
