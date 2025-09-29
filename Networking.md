@@ -1,7 +1,5 @@
 # How OpenShift Virtualization VMs Get IPs from VLANs
 
-Let me explain the complete process of how VMs obtain IP addresses from VLANs when using NMState and OpenShift Virtualization.
-
 ## Architecture Overview
 
 ```
@@ -464,5 +462,3 @@ oc patch networks.operator.openshift.io cluster --type=merge \
    - **Whereabouts**: OpenShift manages IP pool
 4. **VM must be configured**: Cloud-init or guest OS must request/configure the IP
 5. **Physical switch must be configured**: VLAN trunk port to the OpenShift node
-
-Would you like me to provide examples for any specific VLAN scenario or IPAM configuration?
