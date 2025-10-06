@@ -21,7 +21,7 @@ spec:
   desiredState:
     interfaces:
     # Create VLAN interface
-    - name: ens3.100  # Format: physical-interface.vlan-id
+    - name: ens1f2.100  # Format: physical-interface.vlan-id
       type: vlan
       state: up
       vlan:
@@ -43,7 +43,7 @@ spec:
           stp:
             enabled: false
         port:
-        - name: ens3.100  # Attach VLAN interface to bridge
+        - name: ens1f2.100  # Attach VLAN interface to bridge
 ```
 
 Apply the configuration:
@@ -267,7 +267,7 @@ spec:
    ↓ Tagged VLAN Traffic
 2. Physical NIC (ens3) on OpenShift Node
    ↓
-3. VLAN Interface (ens3.100) - Created by NMState
+3. VLAN Interface (ens1f2.100) - Created by NMState
    ↓
 4. Linux Bridge (br-vlan100) - Created by NMState
    ↓
@@ -297,7 +297,7 @@ spec:
   desiredState:
     interfaces:
     # VLAN 100
-    - name: ens3.100
+    - name: ens1f2.100
       type: vlan
       state: up
       vlan:
@@ -313,10 +313,10 @@ spec:
         enabled: false
       bridge:
         port:
-        - name: ens3.100
+        - name: ens1f2.100
     
     # VLAN 200
-    - name: ens3.200
+    - name: ens1f2.200
       type: vlan
       state: up
       vlan:
@@ -332,10 +332,10 @@ spec:
         enabled: false
       bridge:
         port:
-        - name: ens3.200
+        - name: ens1f2.200
     
     # VLAN 300
-    - name: ens3.300
+    - name: ens1f2.300
       type: vlan
       state: up
       vlan:
@@ -351,7 +351,7 @@ spec:
         enabled: false
       bridge:
         port:
-        - name: ens3.300
+        - name: ens1f2.300
 ```
 
 Create NetworkAttachmentDefinitions for each VLAN:
