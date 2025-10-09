@@ -1,0 +1,67 @@
+apiVersion: nmstate.io/v1
+kind: NodeNetworkConfigurationPolicy
+metadata:
+  name: vlan100-bridge-policy-node-1
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: tslosvmw1.corp.dcaddevsso.com
+  desiredState:
+    interfaces:
+    - name: br-vm
+      type: linux-bridge
+      state: up
+      ipv4:
+        enabled: false
+        dhcp: false
+      bridge:
+        options:
+          stp:
+            enabled: false
+        port:
+        - name: ens1f2
+---
+apiVersion: nmstate.io/v1
+kind: NodeNetworkConfigurationPolicy
+metadata:
+  name: vlan100-bridge-policy-node-2
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: tslosvmw2.corp.dcaddevsso.com
+  desiredState:
+    interfaces:
+    - name: br-vm
+      type: linux-bridge
+      state: up
+      ipv4:
+        enabled: false
+        dhcp: false
+      bridge:
+        options:
+          stp:
+            enabled: false
+        port:
+        - name: ens1f3
+
+---
+
+apiVersion: nmstate.io/v1
+kind: NodeNetworkConfigurationPolicy
+metadata:
+  name: vlan100-bridge-policy-node-3
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: tslosvmw3.corp.dcaddevsso.com
+  desiredState:
+    interfaces:
+    - name: br-vm
+      type: linux-bridge
+      state: up
+      ipv4:
+        enabled: false
+        dhcp: false
+      bridge:
+        options:
+          stp:
+            enabled: false
+        port:
+        - name: ens1f3
