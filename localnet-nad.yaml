@@ -1,7 +1,7 @@
 apiVersion: k8s.cni.cncf.io/v1
 kind: NetworkAttachmentDefinition
 metadata:
-  name: external-network
+  name: tslocp-nad
   namespace: tslocprj
 spec:
   config: |
@@ -10,7 +10,7 @@ spec:
       "name": "external-network",
       "type": "ovn-k8s-cni-overlay",
       "topology": "localnet",
-      "netAttachDefName": "tslocprj/external-network",
+      "netAttachDefName": "tslocprj/tslocp-nad",
       "vlanID": 0,
       "mtu": 1400,
       "ipam": {},
