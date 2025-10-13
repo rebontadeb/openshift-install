@@ -1,3 +1,4 @@
+```yaml
 apiVersion: k8s.cni.cncf.io/v1
 kind: NetworkAttachmentDefinition
 metadata:
@@ -15,3 +16,9 @@ spec:
       "mtu": 1400,
       "ipam": {}
     }
+```
+
+
+```bash
+ovs-vsctl get Open_vSwitch . external_ids:ovn-bridge-mappings
+```
