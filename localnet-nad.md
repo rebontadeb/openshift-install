@@ -1,3 +1,15 @@
+### Get the Device name from any node for br-ex
+
+```bash
+oc debug node/node1
+```
+
+
+```bash
+ovs-vsctl get Open_vSwitch . external_ids:ovn-bridge-mappings
+```
+
+
 ```yaml
 apiVersion: k8s.cni.cncf.io/v1
 kind: NetworkAttachmentDefinition
@@ -18,7 +30,3 @@ spec:
     }
 ```
 
-
-```bash
-ovs-vsctl get Open_vSwitch . external_ids:ovn-bridge-mappings
-```
