@@ -163,7 +163,7 @@ wget https://mirror.openshift.com/pub/cgw/mirror-registry/latest/mirror-registry
 
 ### 2.2 Extract mirror-registry
 ```bash
-tar -xzf mirror-registry.tar.gz
+tar -xzf mirror-registry-amd64.tar.gz
 chmod +x mirror-registry
 sudo mv mirror-registry /usr/local/bin/.
 ```
