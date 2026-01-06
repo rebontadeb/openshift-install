@@ -199,7 +199,7 @@ mkdir -p ${REGISTRY_BASE_PATH}/registry/data/mirror-data
 sudo ./mirror-registry install \
   --quayHostname ${REGISTRY_HOST} \
   --quayRoot ${REGISTRY_BASE_PATH}/registry/data \
-  --quayStorage ${REGISTRY_BASE_PATH}/registry/data/mirror-data
+  --quayStorage ${REGISTRY_BASE_PATH}/registry/data/mirror-data \
   --initUser ${REGISTRY_USER} \
   --initPassword ${REGISTRY_PASSWORD} \
   --sslCert ${REGISTRY_BASE_PATH}/registry/certs/domain.crt \  
