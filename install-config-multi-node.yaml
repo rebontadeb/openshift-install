@@ -1,0 +1,69 @@
+apiVersion: v1
+baseDomain: lab.local
+metadata:
+  name: ocp-cluster
+# Networking configuration
+networking:
+  networkType: OVNKubernetes
+  clusterNetwork:
+  - cidr: 10.128.0.0/14
+    hostPrefix: 23
+  serviceNetwork:
+  - 172.30.0.0/16
+  machineNetwork:
+  - cidr: 192.168.100.0/24
+
+# Control plane configuration (3 master nodes)
+controlPlane:
+  architecture: amd64
+  hyperthreading: Enabled
+  name: master
+  replicas: 3
+
+# Compute nodes configuration
+compute:
+# Worker nodes (2 workers)
+- name: worker
+  replicas: 2
+  architecture: amd64
+  hyperthreading: Enabled
+
+# Infrastructure nodes (2 infra nodes)
+- name: infra
+  replicas: 2
+  architecture: amd64
+  hyperthreading: Enabled
+  taints:
+  - key: node-role.kubernetes.io/infra
+    effect: NoSchedule
+
+
+# Pull secret for disconnected registry
+# This should include authentication for your local registry
+pullSecret: '{"auths":{"registry.lab.local:5000":{"auth":"BASE64_ENCODED_USER_PASS","email":"admin@lab.local"},"cloud.openshift.com":{"auth":"REPLACE_WITH_YOUR_PULL_SECRET","email":"your-email@example.com"}}}'
+
+# SSH key for access to nodes
+sshKey: 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC... your-ssh-public-key-here'
+
+# FIPS mode (optional)
+fips: false
+
+# Disconnected installation - Image content sources
+imageContentSources:
+- mirrors:
+  - registry.lab.local:5000/ocp4/openshift4
+  source: quay.io/openshift-release-dev/ocp-release
+- mirrors:
+  - registry.lab.local:5000/ocp4/openshift4
+  source: quay.io/openshift-release-dev/ocp-v4.0-art-dev
+
+# Additional trust bundle for local registry certificate
+additionalTrustBundle: |
+  -----BEGIN CERTIFICATE-----
+  MIIDXTCCAkWgAwIBAgIJAKL0UG+mRKe7MA0GCSqGSIb3DQEBCwUAMEUxCzAJBgNV
+  BAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5ldCBX
+  aWRnaXRzIFB0eSBMdGQwHhcNMjQwMTAxMDAwMDAwWhcNMjUwMTAxMDAwMDAwWjBF
+  MQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50
+  ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIB
+  ... YOUR LOCAL REGISTRY CA CERTIFICATE CONTENT HERE ...
+  -----END CERTIFICATE-----
