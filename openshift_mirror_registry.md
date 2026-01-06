@@ -585,6 +585,8 @@ podman login quay.io --authfile ${REGISTRY_BASE_PATH}/mirror/pull-secret.json
 ```bash
 cd ${REGISTRY_BASE_PATH}/mirror
 
+export REGISTRY_AUTH_FILE=${REGISTRY_BASE_PATH}/mirror/pull-secret.json
+
 oc-mirror --config=${IMAGESET_CONFIG} \
   docker://${LOCAL_REGISTRY} \
   --dest-skip-tls \
