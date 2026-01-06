@@ -158,7 +158,7 @@ sudo dnf install -y podman httpd-tools wget tar jq
 ### 2.1 Download mirror-registry
 ```bash
 cd ${REGISTRY_BASE_PATH}
-wget [https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/mirror-registry/latest/mirror-registry.tar.gz](https://mirror.openshift.com/pub/cgw/mirror-registry/latest/mirror-registry-amd64.tar.gz)
+wget https://mirror.openshift.com/pub/cgw/mirror-registry/latest/mirror-registry-amd64.tar.gz
 ```
 
 ### 2.2 Extract mirror-registry
