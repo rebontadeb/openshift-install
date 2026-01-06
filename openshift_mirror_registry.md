@@ -1,4 +1,4 @@
-# OpenShift Mirror Registry Setup Guide for Agent-Based Installer
+  # OpenShift Mirror Registry Setup Guide for Agent-Based Installer
 
 This comprehensive guide will walk you through creating a mirror registry for OpenShift Agent-Based Installer deployment using **Red Hat's mirror-registry CLI tool**.
 
@@ -179,15 +179,15 @@ chmod +x mirror-registry
 ### 3.1 Set Installation Variables
 ```bash
 export REGISTRY_INSTALL_PATH="${REGISTRY_BASE_PATH}/quay"
-export REGISTRY_INIT_USER="admin"
-export REGISTRY_INIT_PASSWORD="RedHat@2026"
-export REGISTRY_HOSTNAME=$(hostname -f)
+export REGISTRY_USER="admin"
+export REGISTRY_PASSWORD="RedHat@2026"
+export REGISTRY_HOST=$(hostname -f)
 
 # Make persistent
 echo "export REGISTRY_INSTALL_PATH=\"${REGISTRY_INSTALL_PATH}\"" >> ~/.bashrc
-echo "export REGISTRY_INIT_USER=\"${REGISTRY_INIT_USER}\"" >> ~/.bashrc
-echo "export REGISTRY_INIT_PASSWORD=\"${REGISTRY_INIT_PASSWORD}\"" >> ~/.bashrc
-echo "export REGISTRY_HOSTNAME=\"${REGISTRY_HOSTNAME}\"" >> ~/.bashrc
+echo "export REGISTRY_USER=\"${REGISTRY_USER}\"" >> ~/.bashrc
+echo "export REGISTRY_PASSWORD=\"${REGISTRY_PASSWORD}\"" >> ~/.bashrc
+echo "export REGISTRY_HOST=\"${REGISTRY_HOST}\"" >> ~/.bashrc
 ```
 
 ### 3.2 Run mirror-registry Installation
@@ -229,17 +229,17 @@ sudo podman ps
 cat > ${REGISTRY_BASE_PATH}/REGISTRY_INFO.txt <<EOF
 Mirror Registry Installation Details
 =====================================
-Hostname: ${REGISTRY_HOSTNAME}
-Web UI URL: https://${REGISTRY_HOSTNAME}:8443
-Registry URL: ${REGISTRY_HOSTNAME}:8443
-Username: ${REGISTRY_INIT_USER}
-Password: ${REGISTRY_INIT_PASSWORD}
+Hostname: ${REGISTRY_HOST}
+Web UI URL: https://${REGISTRY_HOST}:8443
+Registry URL: ${REGISTRY_HOST}:8443
+Username: ${REGISTRY_USER}
+Password: ${REGISTRY_PASSWORD}
 
 Installation Path: ${REGISTRY_INSTALL_PATH}
 Certificate: ${REGISTRY_INSTALL_PATH}/quay-rootCA/rootCA.pem
 
-To access Web UI: https://${REGISTRY_HOSTNAME}:8443
-To login with podman: podman login -u ${REGISTRY_INIT_USER} -p ${REGISTRY_INIT_PASSWORD} ${REGISTRY_HOSTNAME}:8443
+To access Web UI: https://${REGISTRY_HOST}:8443
+To login with podman: podman login -u ${REGISTRY_USER} -p ${REGISTRY_PASSWORD} ${REGISTRY_HOST}:8443
 
 EOF
 
@@ -253,17 +253,17 @@ chmod 600 ${REGISTRY_BASE_PATH}/REGISTRY_INFO.txt
 
 ### 4.1 Trust the Generated Certificate
 ```bash
-sudo cp ${REGISTRY_INSTALL_PATH}/quay-rootCA/rootCA.pem /etc/pki/ca-trust/source/anchors/${REGISTRY_HOSTNAME}.crt
+sudo cp ${REGISTRY_INSTALL_PATH}/quay-rootCA/rootCA.pem /etc/pki/ca-trust/source/anchors/${REGISTRY_HOST}.crt
 sudo update-ca-trust extract
 
 # Verify certificate is trusted
-trust list | grep -i "${REGISTRY_HOSTNAME}"
+trust list | grep -i "${REGISTRY_HOST}"
 ```
 
 ### 4.2 Configure Podman to Trust Certificate
 ```bash
-mkdir -p ~/.config/containers/certs.d/${REGISTRY_HOSTNAME}:8443
-cp ${REGISTRY_INSTALL_PATH}/quay-rootCA/rootCA.pem ~/.config/containers/certs.d/${REGISTRY_HOSTNAME}:8443/ca.crt
+mkdir -p ~/.config/containers/certs.d/${REGISTRY_HOST}:8443
+cp ${REGISTRY_INSTALL_PATH}/quay-rootCA/rootCA.pem ~/.config/containers/certs.d/${REGISTRY_HOST}:8443/ca.crt
 ```
 
 ### 4.3 Configure Firewall
@@ -284,7 +284,7 @@ sudo firewall-cmd --list-ports
 ### 5.1 Test Web UI Access
 ```bash
 # Check if Web UI is accessible
-curl -k https://${REGISTRY_HOSTNAME}:8443/health/instance
+curl -k https://${REGISTRY_HOST}:8443/health/instance
 
 # Should return: {"data":{"services":{"registry":true}},"status_code":200}
 ```
@@ -292,14 +292,14 @@ curl -k https://${REGISTRY_HOSTNAME}:8443/health/instance
 ### 5.2 Test Registry API
 ```bash
 # Test authentication
-curl -u ${REGISTRY_INIT_USER}:${REGISTRY_INIT_PASSWORD} -k https://${REGISTRY_HOSTNAME}:8443/v2/_catalog
+curl -u ${REGISTRY_USER}:${REGISTRY_PASSWORD} -k https://${REGISTRY_HOST}:8443/v2/_catalog
 
 # Should return: {"repositories":[]}
 ```
 
 ### 5.3 Test Podman Login
 ```bash
-podman login -u ${REGISTRY_INIT_USER} -p ${REGISTRY_INIT_PASSWORD} ${REGISTRY_HOSTNAME}:8443
+podman login -u ${REGISTRY_USER} -p ${REGISTRY_PASSWORD} ${REGISTRY_HOST}:8443
 
 # Should show: Login Succeeded!
 ```
@@ -387,13 +387,13 @@ jq . ${REGISTRY_BASE_PATH}/mirror/pull-secret.json
 ### 7.4 Add Mirror Registry to Pull Secret
 ```bash
 # Create base64 auth string
-REGISTRY_AUTH=$(echo -n "${REGISTRY_INIT_USER}:${REGISTRY_INIT_PASSWORD}" | base64 -w0)
+REGISTRY_AUTH=$(echo -n "${REGISTRY_USER}:${REGISTRY_PASSWORD}" | base64 -w0)
 
 # Backup original
 cp ${REGISTRY_BASE_PATH}/mirror/pull-secret.json ${REGISTRY_BASE_PATH}/mirror/pull-secret.json.backup
 
 # Add mirror registry
-jq --arg host "${REGISTRY_HOSTNAME}:8443" --arg auth "${REGISTRY_AUTH}" \
+jq --arg host "${REGISTRY_HOST}:8443" --arg auth "${REGISTRY_AUTH}" \
   '.auths += {($host): {"auth": $auth, "email": "noemail@localhost"}}' \
   ${REGISTRY_BASE_PATH}/mirror/pull-secret.json > ${REGISTRY_BASE_PATH}/mirror/pull-secret-merged.json
 
@@ -402,7 +402,7 @@ mv ${REGISTRY_BASE_PATH}/mirror/pull-secret-merged.json ${REGISTRY_BASE_PATH}/mi
 
 ### 7.5 Verify Updated Pull Secret
 ```bash
-jq '.auths | keys[]' ${REGISTRY_BASE_PATH}/mirror/pull-secret.json | grep ${REGISTRY_HOSTNAME}
+jq '.auths | keys[]' ${REGISTRY_BASE_PATH}/mirror/pull-secret.json | grep ${REGISTRY_HOST}
 ```
 
 ### 7.6 Test Pull Secret
@@ -563,7 +563,7 @@ echo "export IMAGESET_CONFIG=\"$IMAGESET_CONFIG\"" >> ~/.bashrc
 
 ### 9.1 Set Environment Variables
 ```bash
-export LOCAL_REGISTRY="${REGISTRY_HOSTNAME}:8443"
+export LOCAL_REGISTRY="${REGISTRY_HOST}:8443"
 
 echo "export LOCAL_REGISTRY=\"${LOCAL_REGISTRY}\"" >> ~/.bashrc
 ```
@@ -571,7 +571,7 @@ echo "export LOCAL_REGISTRY=\"${LOCAL_REGISTRY}\"" >> ~/.bashrc
 ### 9.2 Login to All Required Registries
 ```bash
 # Login to mirror registry
-podman login -u ${REGISTRY_INIT_USER} -p ${REGISTRY_INIT_PASSWORD} ${LOCAL_REGISTRY}
+podman login -u ${REGISTRY_USER} -p ${REGISTRY_PASSWORD} ${LOCAL_REGISTRY}
 
 # Login to Red Hat registries
 podman login registry.redhat.io --authfile ${REGISTRY_BASE_PATH}/mirror/pull-secret.json
@@ -620,13 +620,13 @@ ls -lh ${REGISTRY_BASE_PATH}/mirror/oc-mirror-workspace/results-*/catalogSource-
 
 ### 10.1 Check Repository Count
 ```bash
-curl -u ${REGISTRY_INIT_USER}:${REGISTRY_INIT_PASSWORD} -k \
+curl -u ${REGISTRY_USER}:${REGISTRY_PASSWORD} -k \
   https://${LOCAL_REGISTRY}/v2/_catalog | jq -r '.repositories[]' | wc -l
 ```
 
 ### 10.2 List Repositories
 ```bash
-curl -u ${REGISTRY_INIT_USER}:${REGISTRY_INIT_PASSWORD} -k \
+curl -u ${REGISTRY_USER}:${REGISTRY_PASSWORD} -k \
   https://${LOCAL_REGISTRY}/v2/_catalog | jq -r '.repositories[]' > ${REGISTRY_BASE_PATH}/mirror/mirrored-repositories.txt
 
 head -20 ${REGISTRY_BASE_PATH}/mirror/mirrored-repositories.txt
@@ -634,9 +634,9 @@ head -20 ${REGISTRY_BASE_PATH}/mirror/mirrored-repositories.txt
 
 ### 10.3 Access Quay Web UI
 ```bash
-echo "Access Quay Web UI at: https://${REGISTRY_HOSTNAME}:8443"
-echo "Username: ${REGISTRY_INIT_USER}"
-echo "Password: ${REGISTRY_INIT_PASSWORD}"
+echo "Access Quay Web UI at: https://${REGISTRY_HOST}:8443"
+echo "Username: ${REGISTRY_USER}"
+echo "Password: ${REGISTRY_PASSWORD}"
 ```
 
 Open your browser and navigate to the URL. You can browse all mirrored content visually.
@@ -964,10 +964,10 @@ Base Path: ${REGISTRY_BASE_PATH}
 ===============================================================================
 REGISTRY INFORMATION (Quay)
 ===============================================================================
-Web UI: https://${REGISTRY_HOSTNAME}:8443
-Registry URL: ${REGISTRY_HOSTNAME}:8443
-Username: ${REGISTRY_INIT_USER}
-Password: ${REGISTRY_INIT_PASSWORD}
+Web UI: https://${REGISTRY_HOST}:8443
+Registry URL: ${REGISTRY_HOST}:8443
+Username: ${REGISTRY_USER}
+Password: ${REGISTRY_PASSWORD}
 
 Installation Path: ${REGISTRY_INSTALL_PATH}
 Certificate: ${REGISTRY_INSTALL_PATH}/quay-rootCA/rootCA.pem
@@ -1004,7 +1004,7 @@ Services running:
 ===============================================================================
 STATISTICS
 ===============================================================================
-Total Repositories: $(curl -s -u ${REGISTRY_INIT_USER}:${REGISTRY_INIT_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog 2>/dev/null | jq -r '.repositories[]' | wc -l)
+Total Repositories: $(curl -s -u ${REGISTRY_USER}:${REGISTRY_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog 2>/dev/null | jq -r '.repositories[]' | wc -l)
 Quay Data Size: $(du -sh ${REGISTRY_INSTALL_PATH}/quay-storage 2>/dev/null | awk '{print $1}' || echo "N/A")
 Total Disk Usage: $(du -sh ${REGISTRY_BASE_PATH} 2>/dev/null | awk '{print $1}')
 
@@ -1041,13 +1041,13 @@ QUICK REFERENCE COMMANDS
 ===============================================================================
 
 Login to Registry:
-  podman login -u ${REGISTRY_INIT_USER} -p ${REGISTRY_INIT_PASSWORD} ${LOCAL_REGISTRY}
+  podman login -u ${REGISTRY_USER} -p ${REGISTRY_PASSWORD} ${LOCAL_REGISTRY}
 
 Access Web UI:
-  https://${REGISTRY_HOSTNAME}:8443
+  https://${REGISTRY_HOST}:8443
 
 List Repositories (API):
-  curl -u ${REGISTRY_INIT_USER}:${REGISTRY_INIT_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog | jq
+  curl -u ${REGISTRY_USER}:${REGISTRY_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog | jq
 
 Check Services Status:
   sudo podman ps
@@ -1181,7 +1181,7 @@ echo ""
 
 echo "1. Environment Variables..."
 [ -n "$REGISTRY_BASE_PATH" ] && check "REGISTRY_BASE_PATH" || check "REGISTRY_BASE_PATH missing"
-[ -n "$REGISTRY_HOSTNAME" ] && check "REGISTRY_HOSTNAME" || check "REGISTRY_HOSTNAME missing"
+[ -n "$REGISTRY_HOST" ] && check "REGISTRY_HOST" || check "REGISTRY_HOST missing"
 echo ""
 
 echo "2. Disk Space..."
@@ -1198,11 +1198,11 @@ echo ""
 
 echo "4. Registry Connectivity..."
 curl -s -k https://${LOCAL_REGISTRY}/v2/ > /dev/null && check "Registry accessible" || check "Registry NOT accessible"
-curl -s -u ${REGISTRY_INIT_USER}:${REGISTRY_INIT_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog > /dev/null && check "Authentication works" || check "Authentication failed"
+curl -s -u ${REGISTRY_USER}:${REGISTRY_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog > /dev/null && check "Authentication works" || check "Authentication failed"
 echo ""
 
 echo "5. Mirrored Content..."
-REPO_COUNT=$(curl -s -u ${REGISTRY_INIT_USER}:${REGISTRY_INIT_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog 2>/dev/null | jq -r '.repositories[]' | wc -l)
+REPO_COUNT=$(curl -s -u ${REGISTRY_USER}:${REGISTRY_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog 2>/dev/null | jq -r '.repositories[]' | wc -l)
 if [ "$REPO_COUNT" -gt 100 ]; then
     check "Repositories: $REPO_COUNT (GOOD)"
 else
@@ -1223,7 +1223,7 @@ echo "7. Critical Files..."
 echo ""
 
 echo "8. Certificate Trust..."
-trust list | grep -q "$REGISTRY_HOSTNAME" && check "Certificate trusted" || check "Certificate NOT trusted"
+trust list | grep -q "$REGISTRY_HOST" && check "Certificate trusted" || check "Certificate NOT trusted"
 echo ""
 
 echo "==============================================================================="
@@ -1234,8 +1234,8 @@ echo "Registry: https://${LOCAL_REGISTRY}"
 echo "Repositories: $REPO_COUNT"
 echo "Disk Usage: $USED"
 echo ""
-echo "Access Web UI: https://${REGISTRY_HOSTNAME}:8443"
-echo "Username: ${REGISTRY_INIT_USER}"
+echo "Access Web UI: https://${REGISTRY_HOST}:8443"
+echo "Username: ${REGISTRY_USER}"
 echo ""
 EOF
 
@@ -1267,7 +1267,7 @@ cat ${REGISTRY_BASE_PATH}/.quay-install.log
 # Uninstall and retry
 cd ${REGISTRY_BASE_PATH}
 ./mirror-registry uninstall --quayRoot ${REGISTRY_INSTALL_PATH} --autoApprove
-./mirror-registry install --quayHostname ${REGISTRY_HOSTNAME} --quayRoot ${REGISTRY_INSTALL_PATH} --initUser ${REGISTRY_INIT_USER} --initPassword ${REGISTRY_INIT_PASSWORD} --verbose
+./mirror-registry install --quayHostname ${REGISTRY_HOST} --quayRoot ${REGISTRY_INSTALL_PATH} --initUser ${REGISTRY_USER} --initPassword ${REGISTRY_PASSWORD} --verbose
 ```
 
 ### Issue 2: Quay Services Not Starting
@@ -1319,8 +1319,8 @@ sudo update-ca-trust extract
 trust list | grep $(hostname -f)
 
 # For Podman
-mkdir -p ~/.config/containers/certs.d/${REGISTRY_HOSTNAME}:8443
-cp ${REGISTRY_INSTALL_PATH}/quay-rootCA/rootCA.pem ~/.config/containers/certs.d/${REGISTRY_HOSTNAME}:8443/ca.crt
+mkdir -p ~/.config/containers/certs.d/${REGISTRY_HOST}:8443
+cp ${REGISTRY_INSTALL_PATH}/quay-rootCA/rootCA.pem ~/.config/containers/certs.d/${REGISTRY_HOST}:8443/ca.crt
 ```
 
 ### Issue 5: oc-mirror Fails
@@ -1430,11 +1430,11 @@ cat > ${REGISTRY_BASE_PATH}/FINAL_CHECKLIST.txt <<EOF
 [✓] Documentation generated
 
 Registry Access:
-  Web UI: https://${REGISTRY_HOSTNAME}:8443
+  Web UI: https://${REGISTRY_HOST}:8443
   API: ${LOCAL_REGISTRY}
-  User: ${REGISTRY_INIT_USER}
+  User: ${REGISTRY_USER}
 
-Repositories Mirrored: $(curl -s -u ${REGISTRY_INIT_USER}:${REGISTRY_INIT_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog 2>/dev/null | jq -r '.repositories[]' | wc -l)
+Repositories Mirrored: $(curl -s -u ${REGISTRY_USER}:${REGISTRY_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog 2>/dev/null | jq -r '.repositories[]' | wc -l)
 Disk Usage: $(du -sh ${REGISTRY_BASE_PATH} | awk '{print $1}')
 
 Agent ISO: ${REGISTRY_BASE_PATH}/mirror/agent-installer/agent.x86_64.iso
