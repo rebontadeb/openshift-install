@@ -194,11 +194,13 @@ echo "export REGISTRY_HOSTNAME=\"${REGISTRY_HOSTNAME}\"" >> ~/.bashrc
 ```bash
 cd ${REGISTRY_BASE_PATH}
 
-./mirror-registry install \
-  --quayHostname ${REGISTRY_HOSTNAME} \
-  --quayRoot ${REGISTRY_INSTALL_PATH} \
-  --initUser ${REGISTRY_INIT_USER} \
-  --initPassword ${REGISTRY_INIT_PASSWORD} \
+sudo ./mirror-registry install \
+  --quayHostname ${REGISTRY_HOST} \
+  --quayRoot ${REGISTRY_BASE_PATH}/registry/data \
+  --initUser ${REGISTRY_USER} \
+  --initPassword ${REGISTRY_PASSWORD} \
+  --sslCert ${REGISTRY_BASE_PATH}/registry/certs/domain.crt \  
+  --sslKey ${REGISTRY_BASE_PATH}/registry/certs/domain.key \
   --verbose
 ```
 
