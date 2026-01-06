@@ -165,6 +165,7 @@ wget https://mirror.openshift.com/pub/cgw/mirror-registry/latest/mirror-registry
 ```bash
 tar -xzf mirror-registry.tar.gz
 chmod +x mirror-registry
+sudo mv mirror-registry /usr/local/bin/.
 ```
 
 ### 2.3 Verify Installation
