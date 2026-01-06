@@ -1,6 +1,25 @@
 # OpenShift Mirror Registry Setup Guide for Agent-Based Installer
 
-This comprehensive guide will walk you through creating a mirror registry for OpenShift Agent-Based Installer deployment.
+This comprehensive guide will walk you through creating a mirror registry for OpenShift Agent-Based Installer deployment using **Red Hat's mirror-registry CLI tool**.
+
+## Two Installation Methods
+
+This guide covers **TWO methods**:
+
+### Method A: Using mirror-registry CLI (RECOMMENDED - Automated)
+- **Easier**: Automated setup with single command
+- **Faster**: Quick deployment (5-10 minutes for registry setup)
+- **Red Hat Supported**: Official tool from Red Hat
+- **Best for**: Most users, especially beginners
+
+### Method B: Manual Podman Setup (Advanced)
+- **More Control**: Fine-grained configuration
+- **Flexible**: Custom configurations possible
+- **Best for**: Advanced users who need specific customizations
+
+**We recommend Method A for most users.**
+
+---
 
 ## Prerequisites
 
@@ -27,12 +46,6 @@ Example mount points you can use:
 - `/mnt/registry`
 
 This guide uses a variable `REGISTRY_BASE_PATH` that you will set to your actual mount point.
-
-### Required Software
-- Podman or Docker installed
-- `oc` CLI tool
-- `openshift-install` CLI tool
-- `oc-mirror` plugin
 
 ---
 
@@ -100,7 +113,13 @@ echo "export REGISTRY_BASE_PATH=\"/data\"" | sudo tee -a /home/mirror-user/.bash
 echo "export REGISTRY_BASE_PATH=\"/data\"" | sudo tee -a /home/mirror-user/.bash_profile
 ```
 
-### 0.5 Verify Prerequisites
+### 0.5 Set Ownership
+```bash
+sudo chown -R mirror-user:mirror-user ${REGISTRY_BASE_PATH}
+sudo chmod 755 ${REGISTRY_BASE_PATH}
+```
+
+### 0.6 Verify Prerequisites
 ```bash
 # Check mount point has enough space (minimum 1TB)
 df -h $REGISTRY_BASE_PATH
@@ -108,7 +127,7 @@ df -h $REGISTRY_BASE_PATH
 # Should show at least 1TB available
 ```
 
-### 0.6 Switch to mirror-user
+### 0.7 Switch to mirror-user
 ```bash
 su - mirror-user
 # OR
@@ -119,256 +138,175 @@ sudo -i -u mirror-user
 
 ---
 
-## Step 1: Prepare the Host System
+# METHOD A: Using mirror-registry CLI (RECOMMENDED)
 
-### 1.1 Update the System
+This is the **recommended method** - automated and officially supported by Red Hat.
+
+---
+
+## Step 1: Install Required Packages
+
 ```bash
 sudo dnf update -y
+sudo dnf install -y podman httpd-tools wget tar jq
 ```
 
-### 1.2 Install Required Packages
+---
+
+## Step 2: Download and Install mirror-registry CLI
+
+### 2.1 Download mirror-registry
 ```bash
-sudo dnf install -y podman httpd-tools jq wget tar openssl python3-pip bind-utils
+cd ${REGISTRY_BASE_PATH}
+wget https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/mirror-registry/latest/mirror-registry.tar.gz
 ```
 
-### 1.3 Configure Firewall
+### 2.2 Extract mirror-registry
+```bash
+tar -xzf mirror-registry.tar.gz
+chmod +x mirror-registry
+```
+
+### 2.3 Verify Installation
+```bash
+./mirror-registry version
+```
+
+---
+
+## Step 3: Install Mirror Registry Using CLI
+
+### 3.1 Set Installation Variables
+```bash
+export REGISTRY_INSTALL_PATH="${REGISTRY_BASE_PATH}/quay"
+export REGISTRY_INIT_USER="admin"
+export REGISTRY_INIT_PASSWORD="RedHat@2026"
+export REGISTRY_HOSTNAME=$(hostname -f)
+
+# Make persistent
+echo "export REGISTRY_INSTALL_PATH=\"${REGISTRY_INSTALL_PATH}\"" >> ~/.bashrc
+echo "export REGISTRY_INIT_USER=\"${REGISTRY_INIT_USER}\"" >> ~/.bashrc
+echo "export REGISTRY_INIT_PASSWORD=\"${REGISTRY_INIT_PASSWORD}\"" >> ~/.bashrc
+echo "export REGISTRY_HOSTNAME=\"${REGISTRY_HOSTNAME}\"" >> ~/.bashrc
+```
+
+### 3.2 Run mirror-registry Installation
+```bash
+cd ${REGISTRY_BASE_PATH}
+
+./mirror-registry install \
+  --quayHostname ${REGISTRY_HOSTNAME} \
+  --quayRoot ${REGISTRY_INSTALL_PATH} \
+  --initUser ${REGISTRY_INIT_USER} \
+  --initPassword ${REGISTRY_INIT_PASSWORD} \
+  --verbose
+```
+
+**This command will**:
+- Install Quay registry
+- Generate self-signed certificates
+- Configure authentication
+- Start registry services
+- Create systemd service for auto-start
+
+**Installation takes 5-10 minutes.**
+
+### 3.3 Verify Installation
+```bash
+# Check Quay pods are running
+sudo podman ps
+
+# Should show containers:
+# - quay-app
+# - quay-postgres
+# - quay-redis
+```
+
+### 3.4 Save Installation Information
+```bash
+cat > ${REGISTRY_BASE_PATH}/REGISTRY_INFO.txt <<EOF
+Mirror Registry Installation Details
+=====================================
+Hostname: ${REGISTRY_HOSTNAME}
+Web UI URL: https://${REGISTRY_HOSTNAME}:8443
+Registry URL: ${REGISTRY_HOSTNAME}:8443
+Username: ${REGISTRY_INIT_USER}
+Password: ${REGISTRY_INIT_PASSWORD}
+
+Installation Path: ${REGISTRY_INSTALL_PATH}
+Certificate: ${REGISTRY_INSTALL_PATH}/quay-rootCA/rootCA.pem
+
+To access Web UI: https://${REGISTRY_HOSTNAME}:8443
+To login with podman: podman login -u ${REGISTRY_INIT_USER} -p ${REGISTRY_INIT_PASSWORD} ${REGISTRY_HOSTNAME}:8443
+
+EOF
+
+cat ${REGISTRY_BASE_PATH}/REGISTRY_INFO.txt
+chmod 600 ${REGISTRY_BASE_PATH}/REGISTRY_INFO.txt
+```
+
+---
+
+## Step 4: Configure System Trust for Registry Certificate
+
+### 4.1 Trust the Generated Certificate
+```bash
+sudo cp ${REGISTRY_INSTALL_PATH}/quay-rootCA/rootCA.pem /etc/pki/ca-trust/source/anchors/${REGISTRY_HOSTNAME}.crt
+sudo update-ca-trust extract
+
+# Verify certificate is trusted
+trust list | grep -i "${REGISTRY_HOSTNAME}"
+```
+
+### 4.2 Configure Podman to Trust Certificate
+```bash
+mkdir -p ~/.config/containers/certs.d/${REGISTRY_HOSTNAME}:8443
+cp ${REGISTRY_INSTALL_PATH}/quay-rootCA/rootCA.pem ~/.config/containers/certs.d/${REGISTRY_HOSTNAME}:8443/ca.crt
+```
+
+### 4.3 Configure Firewall
 ```bash
 sudo firewall-cmd --permanent --add-port=8443/tcp
-sudo firewall-cmd --permanent --add-port=5000/tcp
-sudo firewall-cmd --permanent --add-port=443/tcp
-sudo firewall-cmd --permanent --add-port=80/tcp
+sudo firewall-cmd --permanent --add-port=5432/tcp
+sudo firewall-cmd --permanent --add-port=6379/tcp
 sudo firewall-cmd --reload
 
 # Verify firewall rules
 sudo firewall-cmd --list-ports
 ```
 
-### 1.4 Configure SELinux for Registry Directories
-```bash
-# Set SELinux to permissive for testing (recommended for initial setup)
-sudo setenforce 0
-sudo sed -i 's/^SELINUX=enforcing/SELINUX=permissive/' /etc/selinux/config
+---
 
-# OR set proper SELinux contexts (for production)
-sudo semanage fcontext -a -t container_file_t "${REGISTRY_BASE_PATH}/registry(/.*)?"
-sudo restorecon -Rv ${REGISTRY_BASE_PATH}/registry
+## Step 5: Test Registry Access
+
+### 5.1 Test Web UI Access
+```bash
+# Check if Web UI is accessible
+curl -k https://${REGISTRY_HOSTNAME}:8443/health/instance
+
+# Should return: {"data":{"services":{"registry":true}},"status_code":200}
 ```
 
-### 1.5 Create Directory Structure on Dedicated Mount Point
+### 5.2 Test Registry API
 ```bash
-# Verify REGISTRY_BASE_PATH is set
-echo "Registry base path: $REGISTRY_BASE_PATH"
+# Test authentication
+curl -u ${REGISTRY_INIT_USER}:${REGISTRY_INIT_PASSWORD} -k https://${REGISTRY_HOSTNAME}:8443/v2/_catalog
 
-# Create registry directories
-sudo mkdir -p ${REGISTRY_BASE_PATH}/registry/{auth,certs,data}
-sudo mkdir -p ${REGISTRY_BASE_PATH}/mirror/oc-mirror-workspace
-sudo mkdir -p ${REGISTRY_BASE_PATH}/mirror/downloads
-
-# Create additional directories for organization
-sudo mkdir -p ${REGISTRY_BASE_PATH}/mirror/{install-config,agent-installer,backup}
-
-# Set ownership to mirror-user
-sudo chown -R mirror-user:mirror-user ${REGISTRY_BASE_PATH}/registry
-sudo chown -R mirror-user:mirror-user ${REGISTRY_BASE_PATH}/mirror
-
-# Set proper permissions
-sudo chmod -R 755 ${REGISTRY_BASE_PATH}/registry
-sudo chmod -R 755 ${REGISTRY_BASE_PATH}/mirror
-
-# Verify directory structure
-tree -L 3 ${REGISTRY_BASE_PATH} || ls -laR ${REGISTRY_BASE_PATH}
+# Should return: {"repositories":[]}
 ```
 
-### 1.6 Verify Disk Space
+### 5.3 Test Podman Login
 ```bash
-df -h ${REGISTRY_BASE_PATH}
-# Ensure you have at least 1TB available
+podman login -u ${REGISTRY_INIT_USER} -p ${REGISTRY_INIT_PASSWORD} ${REGISTRY_HOSTNAME}:8443
+
+# Should show: Login Succeeded!
 ```
 
 ---
 
-## Step 2: Generate SSL Certificates
+## Step 6: Download and Install OpenShift CLI Tools
 
-### 2.1 Set Your Registry Hostname
-```bash
-export REGISTRY_HOST=$(hostname -f)
-echo "Registry hostname: $REGISTRY_HOST"
-
-# Make it persistent
-echo "export REGISTRY_HOST=\"$REGISTRY_HOST\"" >> ~/.bashrc
-```
-
-### 2.2 Generate Self-Signed Certificate with SAN
-```bash
-cd ${REGISTRY_BASE_PATH}/registry/certs
-
-# Create OpenSSL config file for SAN
-cat > openssl-san.cnf <<EOF
-[req]
-default_bits = 4096
-prompt = no
-default_md = sha256
-distinguished_name = dn
-req_extensions = v3_req
-
-[dn]
-C = US
-ST = State
-L = City
-O = Organization
-OU = IT
-CN = ${REGISTRY_HOST}
-
-[v3_req]
-subjectAltName = @alt_names
-
-[alt_names]
-DNS.1 = ${REGISTRY_HOST}
-DNS.2 = localhost
-DNS.3 = $(hostname -s)
-IP.1 = 127.0.0.1
-IP.2 = $(hostname -I | awk '{print $1}')
-EOF
-
-# Generate certificate
-openssl req -newkey rsa:4096 -nodes -sha256 -keyout domain.key \
-  -x509 -days 3650 -out domain.crt -config openssl-san.cnf -extensions v3_req
-
-# Set proper permissions
-chmod 644 domain.crt
-chmod 600 domain.key
-```
-
-### 2.3 Trust the Certificate System-Wide
-```bash
-sudo cp ${REGISTRY_BASE_PATH}/registry/certs/domain.crt /etc/pki/ca-trust/source/anchors/${REGISTRY_HOST}.crt
-sudo update-ca-trust extract
-
-# Verify certificate is trusted
-trust list | grep -i "${REGISTRY_HOST}"
-```
-
-### 2.4 Verify Certificate Details
-```bash
-openssl x509 -in ${REGISTRY_BASE_PATH}/registry/certs/domain.crt -text -noout | grep -A 1 "Subject Alternative Name"
-```
-
-### 2.5 Configure Podman to Trust Certificate
-```bash
-mkdir -p ~/.config/containers/certs.d/${REGISTRY_HOST}:5000
-cp ${REGISTRY_BASE_PATH}/registry/certs/domain.crt ~/.config/containers/certs.d/${REGISTRY_HOST}:5000/ca.crt
-```
-
----
-
-## Step 3: Create Registry Authentication
-
-### 3.1 Generate htpasswd File
-```bash
-# Set registry credentials
-export REGISTRY_USER="admin"
-export REGISTRY_PASSWORD="RedHat@2026"
-
-# Generate htpasswd file
-htpasswd -bBc ${REGISTRY_BASE_PATH}/registry/auth/htpasswd ${REGISTRY_USER} ${REGISTRY_PASSWORD}
-
-# Verify htpasswd file
-cat ${REGISTRY_BASE_PATH}/registry/auth/htpasswd
-```
-
-### 3.2 Set Proper Permissions
-```bash
-chmod 644 ${REGISTRY_BASE_PATH}/registry/auth/htpasswd
-```
-
-### 3.3 Save Credentials for Reference
-```bash
-cat > ${REGISTRY_BASE_PATH}/registry/CREDENTIALS.txt <<EOF
-Mirror Registry Credentials
-============================
-Username: ${REGISTRY_USER}
-Password: ${REGISTRY_PASSWORD}
-Registry URL: https://${REGISTRY_HOST}:5000
-
-KEEP THIS FILE SECURE!
-EOF
-
-chmod 600 ${REGISTRY_BASE_PATH}/registry/CREDENTIALS.txt
-```
-
----
-
-## Step 4: Deploy the Mirror Registry Container
-
-### 4.1 Enable Podman Socket for Rootless
-```bash
-systemctl --user enable --now podman.socket
-loginctl enable-linger mirror-user
-```
-
-### 4.2 Create Registry Container
-```bash
-podman run -d \
-  --name mirror-registry \
-  --restart always \
-  -p 5000:5000 \
-  -v ${REGISTRY_BASE_PATH}/registry/data:/var/lib/registry:z \
-  -v ${REGISTRY_BASE_PATH}/registry/auth:/auth:z \
-  -v ${REGISTRY_BASE_PATH}/registry/certs:/certs:z \
-  -e "REGISTRY_AUTH=htpasswd" \
-  -e "REGISTRY_AUTH_HTPASSWD_REALM=Registry Realm" \
-  -e "REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd" \
-  -e "REGISTRY_HTTP_TLS_CERTIFICATE=/certs/domain.crt" \
-  -e "REGISTRY_HTTP_TLS_KEY=/certs/domain.key" \
-  -e "REGISTRY_STORAGE_DELETE_ENABLED=true" \
-  docker.io/library/registry:2
-```
-
-### 4.3 Verify Registry is Running
-```bash
-podman ps | grep mirror-registry
-
-# Should show STATUS as "Up"
-```
-
-### 4.4 Enable Auto-Start on Boot (Systemd User Service)
-```bash
-mkdir -p ~/.config/systemd/user/
-
-podman generate systemd --name mirror-registry --files --new
-
-mv container-mirror-registry.service ~/.config/systemd/user/
-
-systemctl --user daemon-reload
-systemctl --user enable container-mirror-registry.service
-systemctl --user start container-mirror-registry.service
-
-# Verify service status
-systemctl --user status container-mirror-registry.service
-```
-
-### 4.5 Test Registry Access
-```bash
-# Test without authentication (should fail)
-curl -k https://${REGISTRY_HOST}:5000/v2/_catalog
-
-# Test with authentication (should succeed)
-curl -u ${REGISTRY_USER}:${REGISTRY_PASSWORD} -k https://${REGISTRY_HOST}:5000/v2/_catalog
-```
-**Expected output**: `{"repositories":[]}`
-
-### 4.6 Test with Podman Login
-```bash
-podman login -u ${REGISTRY_USER} -p ${REGISTRY_PASSWORD} ${REGISTRY_HOST}:5000
-
-# Should show "Login Succeeded!"
-```
-
----
-
-## Step 5: Download and Install OpenShift CLI Tools
-
-### 5.1 Set OpenShift Version (Updated for 4.19 Stable)
+### 6.1 Set OpenShift Version
 ```bash
 export OCP_VERSION=4.19.0
 export OCP_ARCH=x86_64
@@ -378,170 +316,108 @@ export OCP_CHANNEL=stable-4.19
 echo "export OCP_VERSION=\"4.19.0\"" >> ~/.bashrc
 echo "export OCP_ARCH=\"x86_64\"" >> ~/.bashrc
 echo "export OCP_CHANNEL=\"stable-4.19\"" >> ~/.bashrc
-
-# Verify
-echo "OpenShift Version: $OCP_VERSION"
-echo "Architecture: $OCP_ARCH"
-echo "Channel: $OCP_CHANNEL"
 ```
 
-### 5.2 Download OpenShift Client (oc)
+### 6.2 Create Downloads Directory
 ```bash
-cd ${REGISTRY_BASE_PATH}/mirror/downloads
+mkdir -p ${REGISTRY_BASE_PATH}/downloads
+cd ${REGISTRY_BASE_PATH}/downloads
+```
 
+### 6.3 Download OpenShift Client (oc)
+```bash
 wget https://mirror.openshift.com/pub/openshift-v4/${OCP_ARCH}/clients/ocp/${OCP_VERSION}/openshift-client-linux.tar.gz
-
-# Extract
 tar -xzf openshift-client-linux.tar.gz
-
-# Install
 sudo install -m 755 oc /usr/local/bin/oc
 sudo install -m 755 kubectl /usr/local/bin/kubectl
-
-# Clean up
 rm -f README.md
 ```
 
-### 5.3 Verify oc Installation
+### 6.4 Download OpenShift Installer
 ```bash
-oc version
-kubectl version --client
-```
-
-### 5.4 Download OpenShift Installer
-```bash
-cd ${REGISTRY_BASE_PATH}/mirror/downloads
-
 wget https://mirror.openshift.com/pub/openshift-v4/${OCP_ARCH}/clients/ocp/${OCP_VERSION}/openshift-install-linux.tar.gz
-
-# Extract
 tar -xzf openshift-install-linux.tar.gz
-
-# Install
 sudo install -m 755 openshift-install /usr/local/bin/openshift-install
-
-# Clean up
 rm -f README.md
 ```
 
-### 5.5 Verify Installer
+### 6.5 Download oc-mirror Plugin
 ```bash
-openshift-install version
-```
-
-### 5.6 Download oc-mirror Plugin
-```bash
-cd ${REGISTRY_BASE_PATH}/mirror/downloads
-
-# Download latest oc-mirror
 wget https://mirror.openshift.com/pub/openshift-v4/${OCP_ARCH}/clients/ocp/${OCP_VERSION}/oc-mirror.tar.gz
-
-# Extract
 tar -xzf oc-mirror.tar.gz
-
-# Install
 sudo install -m 755 oc-mirror /usr/local/bin/oc-mirror
-
-# Make it executable
 sudo chmod +x /usr/local/bin/oc-mirror
 ```
 
-### 5.7 Verify oc-mirror
-```bash
-oc-mirror version
-```
-
-### 5.8 Download butane (for ignition config generation)
-```bash
-cd ${REGISTRY_BASE_PATH}/mirror/downloads
-
-wget https://mirror.openshift.com/pub/openshift-v4/${OCP_ARCH}/clients/butane/latest/butane
-
-# Install
-sudo install -m 755 butane /usr/local/bin/butane
-```
-
-### 5.9 Verify All Tools
+### 6.6 Verify All Tools
 ```bash
 echo "=== Installed Tools Verification ==="
-echo "oc version: $(oc version --client | head -1)"
-echo "kubectl version: $(kubectl version --client --short 2>/dev/null)"
-echo "openshift-install version: $(openshift-install version | head -1)"
-echo "oc-mirror version: $(oc-mirror version 2>/dev/null || echo 'oc-mirror installed')"
-echo "butane version: $(butane --version)"
+oc version --client
+openshift-install version
+oc-mirror version
 ```
 
 ---
 
-## Step 6: Configure Pull Secret
+## Step 7: Configure Pull Secret
 
-### 6.1 Download Pull Secret from Red Hat
+### 7.1 Download Pull Secret from Red Hat
 Go to https://console.redhat.com/openshift/install/pull-secret and download your pull secret.
 
-### 6.2 Upload Pull Secret to Server
-Transfer your downloaded pull-secret file to the server:
+### 7.2 Save Pull Secret
 ```bash
-# From your local machine, upload to server:
-# scp ~/Downloads/pull-secret.txt mirror-user@your-server:${REGISTRY_BASE_PATH}/mirror/
+mkdir -p ${REGISTRY_BASE_PATH}/mirror
+cd ${REGISTRY_BASE_PATH}/mirror
 
-# On the server, save it properly:
-cat > ${REGISTRY_BASE_PATH}/mirror/pull-secret.json <<'EOF'
+# Copy your pull secret content here
+cat > pull-secret.json <<'EOF'
 PASTE_YOUR_PULL_SECRET_CONTENT_HERE
 EOF
 ```
 
-**IMPORTANT**: Replace `PASTE_YOUR_PULL_SECRET_CONTENT_HERE` with the actual JSON content from Red Hat.
+**IMPORTANT**: Replace `PASTE_YOUR_PULL_SECRET_CONTENT_HERE` with actual JSON from Red Hat.
 
-### 6.3 Verify Pull Secret Format
+### 7.3 Verify Pull Secret
 ```bash
-# Verify it's valid JSON
 jq . ${REGISTRY_BASE_PATH}/mirror/pull-secret.json
-
-# Check if it contains Red Hat registries
-jq '.auths | keys[]' ${REGISTRY_BASE_PATH}/mirror/pull-secret.json
 ```
 
-### 6.4 Add Mirror Registry Credentials to Pull Secret
+### 7.4 Add Mirror Registry to Pull Secret
 ```bash
-# Create base64 encoded auth string
-REGISTRY_AUTH=$(echo -n "${REGISTRY_USER}:${REGISTRY_PASSWORD}" | base64 -w0)
+# Create base64 auth string
+REGISTRY_AUTH=$(echo -n "${REGISTRY_INIT_USER}:${REGISTRY_INIT_PASSWORD}" | base64 -w0)
 
-# Backup original pull secret
+# Backup original
 cp ${REGISTRY_BASE_PATH}/mirror/pull-secret.json ${REGISTRY_BASE_PATH}/mirror/pull-secret.json.backup
 
-# Add mirror registry to pull secret
-jq --arg host "${REGISTRY_HOST}:5000" --arg auth "${REGISTRY_AUTH}" \
+# Add mirror registry
+jq --arg host "${REGISTRY_HOSTNAME}:8443" --arg auth "${REGISTRY_AUTH}" \
   '.auths += {($host): {"auth": $auth, "email": "noemail@localhost"}}' \
   ${REGISTRY_BASE_PATH}/mirror/pull-secret.json > ${REGISTRY_BASE_PATH}/mirror/pull-secret-merged.json
 
-# Replace original with merged version
 mv ${REGISTRY_BASE_PATH}/mirror/pull-secret-merged.json ${REGISTRY_BASE_PATH}/mirror/pull-secret.json
 ```
 
-### 6.5 Verify Updated Pull Secret
+### 7.5 Verify Updated Pull Secret
 ```bash
-# Check that mirror registry was added
-jq '.auths | keys[]' ${REGISTRY_BASE_PATH}/mirror/pull-secret.json | grep ${REGISTRY_HOST}
-
-# View the complete pull secret
-jq . ${REGISTRY_BASE_PATH}/mirror/pull-secret.json
+jq '.auths | keys[]' ${REGISTRY_BASE_PATH}/mirror/pull-secret.json | grep ${REGISTRY_HOSTNAME}
 ```
 
-### 6.6 Test Pull Secret with Podman
+### 7.6 Test Pull Secret
 ```bash
-# Login using pull secret
 podman login registry.redhat.io --authfile ${REGISTRY_BASE_PATH}/mirror/pull-secret.json
-
-# Should show "Login Succeeded!"
 ```
 
 ---
 
-## Step 7: Create ImageSetConfiguration for oc-mirror
+## Step 8: Create ImageSetConfiguration for oc-mirror
 
-### 7.1 Create Comprehensive ImageSetConfiguration for OpenShift 4.19
+### 8.1 Create Directory Structure
+```bash
+mkdir -p ${REGISTRY_BASE_PATH}/mirror/oc-mirror-workspace
+```
 
-This configuration includes all major Red Hat products and operators:
+### 8.2 Create Comprehensive ImageSetConfiguration
 
 ```bash
 cat > ${REGISTRY_BASE_PATH}/mirror/imageset-config.yaml <<EOF
@@ -573,7 +449,6 @@ mirror:
         # Networking Operators
         - name: metallb-operator                       # MetalLB Load Balancer
         - name: kubernetes-nmstate-operator            # Network Management State
-        - name: cluster-network-operator               # Cluster Network Operator
         - name: sriov-network-operator                 # SR-IOV Network Operator
         
         # Security & Compliance
@@ -623,12 +498,6 @@ mirror:
         - name: poison-pill-manager                    # Poison Pill Manager
         - name: node-maintenance-operator              # Node Maintenance
   
-    # Red Hat Certified Operators (Optional - uncomment if needed)
-    # - catalog: registry.redhat.io/redhat/certified-operator-index:v4.19
-    #   packages:
-    #     - name: gpu-operator-certified
-    #     - name: node-feature-discovery-operator
-  
   additionalImages:
     # Base Images
     - name: registry.redhat.io/ubi8/ubi:latest
@@ -636,28 +505,15 @@ mirror:
     - name: registry.redhat.io/ubi8/ubi-minimal:latest
     - name: registry.redhat.io/ubi9/ubi-minimal:latest
     
-    # RHEL CoreOS Images (for agent-based installer)
-    - name: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:*
-    
     # Troubleshooting Images
     - name: registry.redhat.io/rhel8/support-tools:latest
     - name: registry.redhat.io/rhel9/support-tools:latest
-    
-    # Monitoring Images
-    - name: registry.redhat.io/openshift4/ose-prometheus:latest
-    - name: registry.redhat.io/openshift4/ose-prometheus-alertmanager:latest
-    - name: registry.redhat.io/openshift4/ose-grafana:latest
-    
-    # Developer Images
-    - name: registry.redhat.io/rhscl/postgresql-13-rhel7:latest
-    - name: registry.redhat.io/rhscl/mysql-80-rhel7:latest
-    - name: registry.redhat.io/rhscl/redis-6-rhel7:latest
 
   helm: {}
 EOF
 ```
 
-### 7.2 Create Minimal Configuration (For Testing/Quick Setup)
+### 8.3 Create Minimal Configuration (For Testing)
 ```bash
 cat > ${REGISTRY_BASE_PATH}/mirror/imageset-config-minimal.yaml <<EOF
 kind: ImageSetConfiguration
@@ -687,279 +543,149 @@ mirror:
 EOF
 ```
 
-### 7.3 Verify Configuration Files
+### 8.4 Choose Configuration
 ```bash
-# Verify full configuration
-cat ${REGISTRY_BASE_PATH}/mirror/imageset-config.yaml
-
-# Verify minimal configuration
-cat ${REGISTRY_BASE_PATH}/mirror/imageset-config-minimal.yaml
-```
-
-### 7.4 Choose Your Configuration
-```bash
-# For full mirror (recommended for production):
+# For full mirror (recommended):
 export IMAGESET_CONFIG="${REGISTRY_BASE_PATH}/mirror/imageset-config.yaml"
 
-# For minimal mirror (for testing):
+# For minimal mirror (testing):
 # export IMAGESET_CONFIG="${REGISTRY_BASE_PATH}/mirror/imageset-config-minimal.yaml"
 
 echo "Using configuration: $IMAGESET_CONFIG"
+echo "export IMAGESET_CONFIG=\"$IMAGESET_CONFIG\"" >> ~/.bashrc
 ```
 
 ---
 
-## Step 8: Mirror OpenShift Images and Red Hat Products
+## Step 9: Mirror OpenShift Content to Registry
 
-### 8.1 Set Environment Variables
+### 9.1 Set Environment Variables
 ```bash
-export LOCAL_REGISTRY="${REGISTRY_HOST}:5000"
-export LOCAL_REPOSITORY='ocp4/openshift4'
-export PRODUCT_REPO='openshift-release-dev'
-export RELEASE_NAME='ocp-release'
+export LOCAL_REGISTRY="${REGISTRY_HOSTNAME}:8443"
 
-# Verify variables
-echo "Local Registry: $LOCAL_REGISTRY"
-echo "Local Repository: $LOCAL_REPOSITORY"
-echo "ImageSet Config: $IMAGESET_CONFIG"
+echo "export LOCAL_REGISTRY=\"${LOCAL_REGISTRY}\"" >> ~/.bashrc
 ```
 
-### 8.2 Login to All Required Registries
+### 9.2 Login to All Required Registries
 ```bash
 # Login to mirror registry
-podman login -u ${REGISTRY_USER} -p ${REGISTRY_PASSWORD} ${LOCAL_REGISTRY}
+podman login -u ${REGISTRY_INIT_USER} -p ${REGISTRY_INIT_PASSWORD} ${LOCAL_REGISTRY}
 
-# Login to Red Hat registries using pull secret
+# Login to Red Hat registries
 podman login registry.redhat.io --authfile ${REGISTRY_BASE_PATH}/mirror/pull-secret.json
 podman login quay.io --authfile ${REGISTRY_BASE_PATH}/mirror/pull-secret.json
-podman login registry.connect.redhat.com --authfile ${REGISTRY_BASE_PATH}/mirror/pull-secret.json
-
-# Verify all logins
-cat ~/.config/containers/auth.json | jq '.auths | keys[]'
 ```
 
-### 8.3 Run oc-mirror to Mirror All Content
+### 9.3 Run oc-mirror
 
-**IMPORTANT**: This process will take 4-8 hours depending on network speed and disk I/O. The download size is typically 100-200 GB for full mirror.
+**IMPORTANT**: This takes 4-8 hours. Download size: 100-200 GB for full mirror.
 
 ```bash
-# Change to mirror directory
 cd ${REGISTRY_BASE_PATH}/mirror
 
-# Run oc-mirror with full configuration
 oc-mirror --config=${IMAGESET_CONFIG} \
   docker://${LOCAL_REGISTRY} \
   --dest-skip-tls \
   --continue-on-error \
   --skip-pruning
-
-# The --continue-on-error flag ensures the mirroring continues even if some images fail
-# The --skip-pruning flag prevents deletion of existing content
 ```
 
-### 8.4 Monitor Progress in Another Terminal
+### 9.4 Monitor Progress (In Another Terminal)
 ```bash
-# Open another SSH session and monitor:
+# Watch disk usage
+watch -n 30 "du -sh ${REGISTRY_BASE_PATH}/quay"
 
-# Watch registry data directory size
-watch -n 30 "du -sh ${REGISTRY_BASE_PATH}/registry/data"
-
-# Watch workspace size
+# Watch workspace
 watch -n 30 "du -sh ${REGISTRY_BASE_PATH}/mirror/oc-mirror-workspace"
 
-# Monitor network activity
-sudo iftop -i $(ip route | grep default | awk '{print $5}')
-
-# Check container logs
-podman logs -f mirror-registry
+# Check Quay logs
+sudo podman logs -f quay-app
 ```
 
-### 8.5 Handle Interruptions (If Needed)
-```bash
-# If the mirroring process is interrupted, you can resume with:
-oc-mirror --config=${IMAGESET_CONFIG} \
-  docker://${LOCAL_REGISTRY} \
-  --dest-skip-tls \
-  --continue-on-error \
-  --skip-pruning \
-  --from=${REGISTRY_BASE_PATH}/mirror/oc-mirror-workspace
-```
-
-### 8.6 Verify Mirroring Completion
+### 9.5 Verify Mirroring Completion
 ```bash
 # Check for results directory
 ls -lh ${REGISTRY_BASE_PATH}/mirror/oc-mirror-workspace/results-*
 
-# Check for critical files
+# Verify critical files
 ls -lh ${REGISTRY_BASE_PATH}/mirror/oc-mirror-workspace/results-*/imageContentSourcePolicy.yaml
 ls -lh ${REGISTRY_BASE_PATH}/mirror/oc-mirror-workspace/results-*/catalogSource-*.yaml
 ```
 
 ---
 
-## Step 9: Verify Mirrored Content
+## Step 10: Verify Mirrored Content
 
-### 9.1 Check Registry Catalog
+### 10.1 Check Repository Count
 ```bash
-curl -u ${REGISTRY_USER}:${REGISTRY_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog | jq -r '.repositories[]' | wc -l
-
-# Should show hundreds of repositories
+curl -u ${REGISTRY_INIT_USER}:${REGISTRY_INIT_PASSWORD} -k \
+  https://${LOCAL_REGISTRY}/v2/_catalog | jq -r '.repositories[]' | wc -l
 ```
 
-### 9.2 List All Repositories
+### 10.2 List Repositories
 ```bash
-curl -u ${REGISTRY_USER}:${REGISTRY_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog | jq -r '.repositories[]' > ${REGISTRY_BASE_PATH}/mirror/mirrored-repositories.txt
+curl -u ${REGISTRY_INIT_USER}:${REGISTRY_INIT_PASSWORD} -k \
+  https://${LOCAL_REGISTRY}/v2/_catalog | jq -r '.repositories[]' > ${REGISTRY_BASE_PATH}/mirror/mirrored-repositories.txt
 
-# View first 20 repositories
 head -20 ${REGISTRY_BASE_PATH}/mirror/mirrored-repositories.txt
 ```
 
-### 9.3 Check OpenShift Release Images
+### 10.3 Access Quay Web UI
 ```bash
-curl -u ${REGISTRY_USER}:${REGISTRY_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/ocp4/openshift4/tags/list | jq -r '.tags[]' | grep ${OCP_VERSION}
+echo "Access Quay Web UI at: https://${REGISTRY_HOSTNAME}:8443"
+echo "Username: ${REGISTRY_INIT_USER}"
+echo "Password: ${REGISTRY_INIT_PASSWORD}"
 ```
 
-### 9.4 Check Operator Catalog
-```bash
-curl -u ${REGISTRY_USER}:${REGISTRY_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/redhat/redhat-operator-index/tags/list | jq
-```
-
-### 9.5 Verify Specific Images
-```bash
-# Check if specific operator images exist
-for operator in "local-storage-operator" "odf-operator" "metallb-operator"; do
-  echo "Checking $operator..."
-  curl -u ${REGISTRY_USER}:${REGISTRY_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog | jq -r '.repositories[]' | grep $operator || echo "Not found: $operator"
-done
-```
-
-### 9.6 Generate Mirroring Report
-```bash
-cat > ${REGISTRY_BASE_PATH}/mirror/MIRROR_REPORT.txt <<EOF
-=== OpenShift Mirror Registry Report ===
-Generated: $(date)
-
-Registry URL: https://${LOCAL_REGISTRY}
-OpenShift Version: ${OCP_VERSION}
-Channel: ${OCP_CHANNEL}
-
-Total Repositories: $(curl -u ${REGISTRY_USER}:${REGISTRY_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog 2>/dev/null | jq -r '.repositories[]' | wc -l)
-
-Disk Usage:
-$(du -sh ${REGISTRY_BASE_PATH}/registry/data)
-
-Workspace Usage:
-$(du -sh ${REGISTRY_BASE_PATH}/mirror/oc-mirror-workspace)
-
-Critical Files:
-$(ls -lh ${REGISTRY_BASE_PATH}/mirror/oc-mirror-workspace/results-*/imageContentSourcePolicy.yaml 2>/dev/null || echo "Not found")
-$(ls -lh ${REGISTRY_BASE_PATH}/mirror/oc-mirror-workspace/results-*/catalogSource-*.yaml 2>/dev/null || echo "Not found")
-
-Top 10 Largest Repositories:
-$(du -sh ${REGISTRY_BASE_PATH}/registry/data/docker/registry/v2/repositories/* 2>/dev/null | sort -hr | head -10)
-EOF
-
-cat ${REGISTRY_BASE_PATH}/mirror/MIRROR_REPORT.txt
-```
+Open your browser and navigate to the URL. You can browse all mirrored content visually.
 
 ---
 
-## Step 10: Prepare ImageContentSourcePolicy and CatalogSource
+## Step 11: Prepare Files for Installation
 
-### 10.1 Locate Generated Files
+### 11.1 Copy Generated Files
 ```bash
-# Find the latest results directory
+mkdir -p ${REGISTRY_BASE_PATH}/mirror/install-config
+
 RESULTS_DIR=$(ls -td ${REGISTRY_BASE_PATH}/mirror/oc-mirror-workspace/results-* | head -1)
-echo "Results directory: $RESULTS_DIR"
 
-# List all generated files
-ls -lh $RESULTS_DIR/
-```
-
-### 10.2 Copy Critical Files for Installation
-```bash
-# Copy imageContentSourcePolicy
 cp $RESULTS_DIR/imageContentSourcePolicy.yaml ${REGISTRY_BASE_PATH}/mirror/install-config/
-
-# Copy catalogSource files
 cp $RESULTS_DIR/catalogSource-*.yaml ${REGISTRY_BASE_PATH}/mirror/install-config/
-
-# Copy mapping file
 cp $RESULTS_DIR/mapping.txt ${REGISTRY_BASE_PATH}/mirror/install-config/
+```
 
-# Copy release signatures
-cp $RESULTS_DIR/release-signatures/ ${REGISTRY_BASE_PATH}/mirror/install-config/ -r 2>/dev/null || echo "No release signatures found"
-
-# List copied files
+### 11.2 Verify Files
+```bash
 ls -lh ${REGISTRY_BASE_PATH}/mirror/install-config/
-```
-
-### 10.3 Verify imageContentSourcePolicy Content
-```bash
 cat ${REGISTRY_BASE_PATH}/mirror/install-config/imageContentSourcePolicy.yaml
-
-# Verify it contains mirror entries
-grep -A 5 "repositoryDigestMirrors:" ${REGISTRY_BASE_PATH}/mirror/install-config/imageContentSourcePolicy.yaml
-```
-
-### 10.4 Verify CatalogSource Content
-```bash
-# List all catalog sources
-ls ${REGISTRY_BASE_PATH}/mirror/install-config/catalogSource-*.yaml
-
-# View each catalog source
-for catalog in ${REGISTRY_BASE_PATH}/mirror/install-config/catalogSource-*.yaml; do
-  echo "=== $catalog ==="
-  cat $catalog
-  echo ""
-done
-```
-
-### 10.5 Extract Registry Information
-```bash
-# Create a summary of mirror mappings
-grep "source:" ${REGISTRY_BASE_PATH}/mirror/install-config/mapping.txt | sort -u > ${REGISTRY_BASE_PATH}/mirror/install-config/source-registries.txt
-grep "mirror:" ${REGISTRY_BASE_PATH}/mirror/install-config/mapping.txt | sort -u > ${REGISTRY_BASE_PATH}/mirror/install-config/mirror-destinations.txt
-
-echo "Source Registries:"
-cat ${REGISTRY_BASE_PATH}/mirror/install-config/source-registries.txt
-
-echo ""
-echo "Mirror Destinations:"
-cat ${REGISTRY_BASE_PATH}/mirror/install-config/mirror-destinations.txt
 ```
 
 ---
 
-## Step 11: Create Agent-Based Installer Configuration
+## Step 12: Create Agent-Based Installer Configuration
 
-### 11.1 Create Install Config Directory
+### 12.1 Generate SSH Key
+```bash
+if [ ! -f ~/.ssh/id_rsa.pub ]; then
+  ssh-keygen -t rsa -b 4096 -N '' -f ~/.ssh/id_rsa
+fi
+
+cat ~/.ssh/id_rsa.pub
+```
+
+### 12.2 Create Installation Directory
 ```bash
 mkdir -p ${REGISTRY_BASE_PATH}/mirror/agent-installer
 cd ${REGISTRY_BASE_PATH}/mirror/agent-installer
 ```
 
-### 11.2 Generate SSH Key (if not exists)
-```bash
-if [ ! -f ~/.ssh/id_rsa.pub ]; then
-  ssh-keygen -t rsa -b 4096 -N '' -f ~/.ssh/id_rsa
-  echo "SSH key generated"
-else
-  echo "SSH key already exists"
-fi
+### 12.3 Create install-config.yaml
 
-# Display public key
-cat ~/.ssh/id_rsa.pub
-```
-
-### 11.3 Create install-config.yaml
-
-**IMPORTANT**: Edit the following values to match your environment:
-- `baseDomain`: Your domain (e.g., example.com)
-- `metadata.name`: Your cluster name
-- Network CIDR ranges
-- API and Ingress VIPs
-- Machine network CIDR
+**IMPORTANT**: Edit these values for your environment:
+- baseDomain
+- metadata.name
+- Network CIDRs
+- VIPs
 
 ```bash
 cat > ${REGISTRY_BASE_PATH}/mirror/agent-installer/install-config.yaml <<EOF
@@ -993,31 +719,19 @@ platform:
 pullSecret: '$(cat ${REGISTRY_BASE_PATH}/mirror/pull-secret.json | jq -c)'
 sshKey: '$(cat ~/.ssh/id_rsa.pub)'
 additionalTrustBundle: |
-$(sed 's/^/  /' ${REGISTRY_BASE_PATH}/registry/certs/domain.crt)
+$(sed 's/^/  /' ${REGISTRY_INSTALL_PATH}/quay-rootCA/rootCA.pem)
 imageContentSources:
 $(grep -A 1000 "repositoryDigestMirrors:" ${REGISTRY_BASE_PATH}/mirror/install-config/imageContentSourcePolicy.yaml | sed 's/^/  /' | grep -v "apiVersion\|kind\|metadata")
 EOF
 ```
 
-### 11.4 Verify install-config.yaml
-```bash
-# Check if file is valid YAML
-cat ${REGISTRY_BASE_PATH}/mirror/agent-installer/install-config.yaml
+### 12.4 Create agent-config.yaml
 
-# Verify pull secret is embedded
-grep -A 5 "pullSecret:" ${REGISTRY_BASE_PATH}/mirror/agent-installer/install-config.yaml
-
-# Verify imageContentSources are embedded
-grep -A 10 "imageContentSources:" ${REGISTRY_BASE_PATH}/mirror/agent-installer/install-config.yaml
-```
-
-### 11.5 Create agent-config.yaml
-
-**IMPORTANT**: Edit the following values to match your environment:
+**IMPORTANT**: Edit these values for your environment:
 - MAC addresses
 - IP addresses
 - Interface names
-- Gateway and DNS servers
+- DNS and gateway
 
 ```bash
 cat > ${REGISTRY_BASE_PATH}/mirror/agent-installer/agent-config.yaml <<EOF
@@ -1174,12 +888,7 @@ hosts:
 EOF
 ```
 
-### 11.6 Verify agent-config.yaml
-```bash
-cat ${REGISTRY_BASE_PATH}/mirror/agent-installer/agent-config.yaml
-```
-
-### 11.7 Backup Configuration Files
+### 12.5 Backup Configuration Files
 ```bash
 cp ${REGISTRY_BASE_PATH}/mirror/agent-installer/install-config.yaml ${REGISTRY_BASE_PATH}/mirror/agent-installer/install-config.yaml.backup
 cp ${REGISTRY_BASE_PATH}/mirror/agent-installer/agent-config.yaml ${REGISTRY_BASE_PATH}/mirror/agent-installer/agent-config.yaml.backup
@@ -1187,232 +896,115 @@ cp ${REGISTRY_BASE_PATH}/mirror/agent-installer/agent-config.yaml ${REGISTRY_BAS
 
 ---
 
-## Step 12: Generate Agent ISO
+## Step 13: Generate Agent ISO
 
-### 12.1 Verify Prerequisites
+### 13.1 Verify Prerequisites
 ```bash
-# Check that all files exist
-echo "Checking prerequisites..."
-test -f ${REGISTRY_BASE_PATH}/mirror/agent-installer/install-config.yaml && echo "✓ install-config.yaml exists" || echo "✗ install-config.yaml missing"
-test -f ${REGISTRY_BASE_PATH}/mirror/agent-installer/agent-config.yaml && echo "✓ agent-config.yaml exists" || echo "✗ agent-config.yaml missing"
-test -f ~/.ssh/id_rsa.pub && echo "✓ SSH key exists" || echo "✗ SSH key missing"
-test -f ${REGISTRY_BASE_PATH}/registry/certs/domain.crt && echo "✓ Registry certificate exists" || echo "✗ Certificate missing"
+test -f ${REGISTRY_BASE_PATH}/mirror/agent-installer/install-config.yaml && echo "✓ install-config.yaml" || echo "✗ Missing"
+test -f ${REGISTRY_BASE_PATH}/mirror/agent-installer/agent-config.yaml && echo "✓ agent-config.yaml" || echo "✗ Missing"
+test -f ~/.ssh/id_rsa.pub && echo "✓ SSH key" || echo "✗ Missing"
 ```
 
-### 12.2 Create Agent ISO
+### 13.2 Create Agent ISO
 ```bash
 cd ${REGISTRY_BASE_PATH}/mirror/agent-installer
 
-# Generate the agent ISO
 openshift-install agent create image --log-level=debug
 
-# This will take 10-20 minutes
+# Takes 10-20 minutes
 ```
 
-### 12.3 Monitor ISO Creation
-```bash
-# In another terminal, monitor progress:
-tail -f ${REGISTRY_BASE_PATH}/mirror/agent-installer/.openshift_install.log
-```
-
-### 12.4 Verify ISO Creation
+### 13.3 Verify ISO Creation
 ```bash
 ls -lh ${REGISTRY_BASE_PATH}/mirror/agent-installer/agent.x86_64.iso
 
-# Should show a file around 1-2 GB
-```
-
-### 12.5 Calculate ISO Checksum
-```bash
-cd ${REGISTRY_BASE_PATH}/mirror/agent-installer
+# Calculate checksum
 sha256sum agent.x86_64.iso > agent.x86_64.iso.sha256
-
 cat agent.x86_64.iso.sha256
-```
-
-### 12.6 Extract Ignition Files (for reference)
-```bash
-# Extract the generated ignition files
-ls -lh ${REGISTRY_BASE_PATH}/mirror/agent-installer/*.ign 2>/dev/null || echo "Ignition files are embedded in ISO"
-```
-
----
-
-## Step 13: Post-Installation Registry Configuration
-
-### 13.1 Configure Registry for Production
-```bash
-# Create registry config for garbage collection
-cat > ${REGISTRY_BASE_PATH}/registry/config.yml <<EOF
-version: 0.1
-log:
-  fields:
-    service: registry
-storage:
-  cache:
-    blobdescriptor: inmemory
-  filesystem:
-    rootdirectory: /var/lib/registry
-  delete:
-    enabled: true
-http:
-  addr: :5000
-  headers:
-    X-Content-Type-Options: [nosniff]
-  tls:
-    certificate: /certs/domain.crt
-    key: /certs/domain.key
-auth:
-  htpasswd:
-    realm: Registry Realm
-    path: /auth/htpasswd
-health:
-  storagedriver:
-    enabled: true
-    interval: 10s
-    threshold: 3
-EOF
-```
-
-### 13.2 Update Registry Container with New Config
-```bash
-# Stop existing container
-podman stop mirror-registry
-podman rm mirror-registry
-
-# Create new container with config
-podman run -d \
-  --name mirror-registry \
-  --restart always \
-  -p 5000:5000 \
-  -v ${REGISTRY_BASE_PATH}/registry/data:/var/lib/registry:z \
-  -v ${REGISTRY_BASE_PATH}/registry/auth:/auth:z \
-  -v ${REGISTRY_BASE_PATH}/registry/certs:/certs:z \
-  -v ${REGISTRY_BASE_PATH}/registry/config.yml:/etc/docker/registry/config.yml:z \
-  docker.io/library/registry:2
-
-# Verify it's running
-podman ps | grep mirror-registry
-```
-
-### 13.3 Update Systemd Service
-```bash
-# Regenerate systemd service
-podman generate systemd --name mirror-registry --files --new
-
-# Move to systemd directory
-mv container-mirror-registry.service ~/.config/systemd/user/
-
-# Reload and restart
-systemctl --user daemon-reload
-systemctl --user restart container-mirror-registry.service
-systemctl --user status container-mirror-registry.service
-```
-
-### 13.4 Configure Registry Cleanup Cron Job
-```bash
-# Create cleanup script
-cat > ${REGISTRY_BASE_PATH}/registry/cleanup.sh <<'EOF'
-#!/bin/bash
-REGISTRY_BASE_PATH="/data"  # Change this to match your path
-podman exec mirror-registry registry garbage-collect /etc/docker/registry/config.yml --delete-untagged=true
-echo "Registry cleanup completed: $(date)" >> ${REGISTRY_BASE_PATH}/registry/cleanup.log
-EOF
-
-chmod +x ${REGISTRY_BASE_PATH}/registry/cleanup.sh
-
-# Add to crontab (runs weekly on Sunday at 2 AM)
-(crontab -l 2>/dev/null; echo "0 2 * * 0 ${REGISTRY_BASE_PATH}/registry/cleanup.sh") | crontab -
-
-# Verify crontab
-crontab -l
-```
-
-### 13.5 Test Registry Health
-```bash
-# Check health endpoint
-curl -k https://${LOCAL_REGISTRY}/v2/
-
-# Check with authentication
-curl -u ${REGISTRY_USER}:${REGISTRY_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog | jq -r '.repositories[]' | wc -l
 ```
 
 ---
 
 ## Step 14: Backup and Documentation
 
-### 14.1 Create Comprehensive Backup
+### 14.1 Create Backup
 ```bash
 mkdir -p ${REGISTRY_BASE_PATH}/backup/$(date +%Y%m%d)
 
 # Backup certificates
-tar -czf ${REGISTRY_BASE_PATH}/backup/$(date +%Y%m%d)/certs-backup.tar.gz \
-  -C ${REGISTRY_BASE_PATH}/registry certs
-
-# Backup auth files
-tar -czf ${REGISTRY_BASE_PATH}/backup/$(date +%Y%m%d)/auth-backup.tar.gz \
-  -C ${REGISTRY_BASE_PATH}/registry auth
+tar -czf ${REGISTRY_BASE_PATH}/backup/$(date +%Y%m%d)/certificates.tar.gz \
+  -C ${REGISTRY_INSTALL_PATH} quay-rootCA
 
 # Backup pull secret
 cp ${REGISTRY_BASE_PATH}/mirror/pull-secret.json ${REGISTRY_BASE_PATH}/backup/$(date +%Y%m%d)/
 
-# Backup install configs
-tar -czf ${REGISTRY_BASE_PATH}/backup/$(date +%Y%m%d)/install-config-backup.tar.gz \
-  -C ${REGISTRY_BASE_PATH}/mirror install-config agent-installer
+# Backup configs
+tar -czf ${REGISTRY_BASE_PATH}/backup/$(date +%Y%m%d)/configs.tar.gz \
+  ${REGISTRY_BASE_PATH}/mirror/agent-installer/*.yaml \
+  ${REGISTRY_BASE_PATH}/mirror/imageset-config.yaml
 
 # Backup oc-mirror results
-tar -czf ${REGISTRY_BASE_PATH}/backup/$(date +%Y%m%d)/oc-mirror-results-backup.tar.gz \
+tar -czf ${REGISTRY_BASE_PATH}/backup/$(date +%Y%m%d)/results.tar.gz \
   -C ${REGISTRY_BASE_PATH}/mirror/oc-mirror-workspace results-*
-
-# List backups
-ls -lh ${REGISTRY_BASE_PATH}/backup/$(date +%Y%m%d)/
 ```
 
-### 14.2 Create Registry Documentation
+### 14.2 Create Complete Documentation
 ```bash
-cat > ${REGISTRY_BASE_PATH}/REGISTRY_COMPLETE_INFO.txt <<EOF
+cat > ${REGISTRY_BASE_PATH}/COMPLETE_DOCUMENTATION.txt <<EOF
 ===============================================================================
 OPENSHIFT MIRROR REGISTRY - COMPLETE DOCUMENTATION
 ===============================================================================
 Generated: $(date)
+Method: mirror-registry CLI (Red Hat Official)
 User: mirror-user
 Base Path: ${REGISTRY_BASE_PATH}
 
 ===============================================================================
-REGISTRY INFORMATION
+REGISTRY INFORMATION (Quay)
 ===============================================================================
-Hostname: ${REGISTRY_HOST}
-Port: 5000
-URL: https://${REGISTRY_HOST}:5000
-Username: ${REGISTRY_USER}
-Password: ${REGISTRY_PASSWORD}
+Web UI: https://${REGISTRY_HOSTNAME}:8443
+Registry URL: ${REGISTRY_HOSTNAME}:8443
+Username: ${REGISTRY_INIT_USER}
+Password: ${REGISTRY_INIT_PASSWORD}
+
+Installation Path: ${REGISTRY_INSTALL_PATH}
+Certificate: ${REGISTRY_INSTALL_PATH}/quay-rootCA/rootCA.pem
 
 ===============================================================================
 OPENSHIFT INFORMATION
 ===============================================================================
-OpenShift Version: ${OCP_VERSION}
+Version: ${OCP_VERSION}
 Channel: ${OCP_CHANNEL}
 Architecture: ${OCP_ARCH}
 
 ===============================================================================
 FILE LOCATIONS
 ===============================================================================
-Registry Data: ${REGISTRY_BASE_PATH}/registry/data
-Certificates: ${REGISTRY_BASE_PATH}/registry/certs/domain.crt
-Auth File: ${REGISTRY_BASE_PATH}/registry/auth/htpasswd
+Quay Data: ${REGISTRY_INSTALL_PATH}
+PostgreSQL Data: ${REGISTRY_INSTALL_PATH}/quay-postgres
+Redis Data: ${REGISTRY_INSTALL_PATH}/quay-redis
+Certificate: ${REGISTRY_INSTALL_PATH}/quay-rootCA/rootCA.pem
 Pull Secret: ${REGISTRY_BASE_PATH}/mirror/pull-secret.json
 ImageSet Config: ${REGISTRY_BASE_PATH}/mirror/imageset-config.yaml
-Install Config: ${REGISTRY_BASE_PATH}/mirror/agent-installer/install-config.yaml
-Agent Config: ${REGISTRY_BASE_PATH}/mirror/agent-installer/agent-config.yaml
 Agent ISO: ${REGISTRY_BASE_PATH}/mirror/agent-installer/agent.x86_64.iso
 
 ===============================================================================
-MIRRORED CONTENT STATISTICS
+SERVICES STATUS
 ===============================================================================
-Total Repositories: $(curl -u ${REGISTRY_USER}:${REGISTRY_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog 2>/dev/null | jq -r '.repositories[]' | wc -l)
-Registry Data Size: $(du -sh ${REGISTRY_BASE_PATH}/registry/data | awk '{print $1}')
-Workspace Size: $(du -sh ${REGISTRY_BASE_PATH}/mirror/oc-mirror-workspace | awk '{print $1}')
-Total Disk Usage: $(du -sh ${REGISTRY_BASE_PATH} | awk '{print $1}')
+Check all services:
+  sudo podman ps
+
+Services running:
+  - quay-app (Port 8443)
+  - quay-postgres (Port 5432)
+  - quay-redis (Port 6379)
+
+===============================================================================
+STATISTICS
+===============================================================================
+Total Repositories: $(curl -s -u ${REGISTRY_INIT_USER}:${REGISTRY_INIT_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog 2>/dev/null | jq -r '.repositories[]' | wc -l)
+Quay Data Size: $(du -sh ${REGISTRY_INSTALL_PATH}/quay-storage 2>/dev/null | awk '{print $1}' || echo "N/A")
+Total Disk Usage: $(du -sh ${REGISTRY_BASE_PATH} 2>/dev/null | awk '{print $1}')
 
 ===============================================================================
 RED HAT PRODUCTS MIRRORED
@@ -1440,28 +1032,38 @@ RED HAT PRODUCTS MIRRORED
 ✓ Multicluster Engine (MCE)
 ✓ Compliance Operator
 ✓ File Integrity Operator
+✓ And 10+ additional operators
 
 ===============================================================================
 QUICK REFERENCE COMMANDS
 ===============================================================================
 
 Login to Registry:
-  podman login -u ${REGISTRY_USER} -p ${REGISTRY_PASSWORD} ${LOCAL_REGISTRY}
+  podman login -u ${REGISTRY_INIT_USER} -p ${REGISTRY_INIT_PASSWORD} ${LOCAL_REGISTRY}
 
-List Catalog:
-  curl -u ${REGISTRY_USER}:${REGISTRY_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog | jq
+Access Web UI:
+  https://${REGISTRY_HOSTNAME}:8443
 
-Check Registry Status:
-  systemctl --user status container-mirror-registry.service
+List Repositories (API):
+  curl -u ${REGISTRY_INIT_USER}:${REGISTRY_INIT_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog | jq
 
-View Registry Logs:
-  podman logs -f mirror-registry
+Check Services Status:
+  sudo podman ps
+  
+View Quay Logs:
+  sudo podman logs -f quay-app
 
-Restart Registry:
-  systemctl --user restart container-mirror-registry.service
+Restart Quay:
+  cd ${REGISTRY_BASE_PATH}
+  ./mirror-registry restart --quayRoot ${REGISTRY_INSTALL_PATH}
 
-Run Garbage Collection:
-  ${REGISTRY_BASE_PATH}/registry/cleanup.sh
+Stop Quay:
+  cd ${REGISTRY_BASE_PATH}
+  ./mirror-registry pause --quayRoot ${REGISTRY_INSTALL_PATH}
+
+Start Quay:
+  cd ${REGISTRY_BASE_PATH}
+  ./mirror-registry unpause --quayRoot ${REGISTRY_INSTALL_PATH}
 
 Update Mirrored Content:
   cd ${REGISTRY_BASE_PATH}/mirror
@@ -1486,494 +1088,320 @@ TROUBLESHOOTING
 ===============================================================================
 
 Registry Not Accessible:
-  podman ps -a | grep mirror-registry
-  podman logs mirror-registry
-  systemctl --user restart container-mirror-registry.service
+  sudo podman ps
+  sudo podman logs quay-app
+  cd ${REGISTRY_BASE_PATH} && ./mirror-registry restart --quayRoot ${REGISTRY_INSTALL_PATH}
 
 Certificate Issues:
-  sudo cp ${REGISTRY_BASE_PATH}/registry/certs/domain.crt /etc/pki/ca-trust/source/anchors/
+  sudo cp ${REGISTRY_INSTALL_PATH}/quay-rootCA/rootCA.pem /etc/pki/ca-trust/source/anchors/
   sudo update-ca-trust extract
-
-Test Registry Connectivity:
-  curl -u ${REGISTRY_USER}:${REGISTRY_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog
 
 Check Disk Space:
   df -h ${REGISTRY_BASE_PATH}
 
+View All Logs:
+  sudo podman logs quay-app
+  sudo podman logs quay-postgres
+  sudo podman logs quay-redis
+
 ===============================================================================
-MAINTENANCE SCHEDULE
+UNINSTALL (If Needed)
+===============================================================================
+
+To completely remove the registry:
+  cd ${REGISTRY_BASE_PATH}
+  ./mirror-registry uninstall --quayRoot ${REGISTRY_INSTALL_PATH} --autoApprove
+
+===============================================================================
+MAINTENANCE
 ===============================================================================
 
 Daily:
   - Monitor disk space: df -h ${REGISTRY_BASE_PATH}
-  - Check registry logs: podman logs --tail 100 mirror-registry
+  - Check services: sudo podman ps
 
 Weekly:
-  - Run garbage collection (automated via cron)
-  - Review backup logs
-
-Monthly:
-  - Update mirrored content with latest releases
-  - Rotate backups
+  - Review Quay logs
   - Verify backup integrity
 
-===============================================================================
-BACKUP LOCATIONS
-===============================================================================
-Latest Backup: ${REGISTRY_BASE_PATH}/backup/$(date +%Y%m%d)/
-
-Backup Contents:
-  - certs-backup.tar.gz (Certificates)
-  - auth-backup.tar.gz (Authentication files)
-  - pull-secret.json (Pull secret)
-  - install-config-backup.tar.gz (Installation configs)
-  - oc-mirror-results-backup.tar.gz (Mirroring results)
+Monthly:
+  - Update mirrored content
+  - Rotate backups
 
 ===============================================================================
-SECURITY NOTES
-===============================================================================
-
-1. Keep this file secure - it contains sensitive information
-2. Regularly update registry credentials
-3. Monitor registry access logs
-4. Keep certificates up to date (current expiry: 10 years from creation)
-5. Regularly backup registry data
-6. Use firewall rules to restrict registry access
-
-===============================================================================
-SUPPORT AND RESOURCES
+SUPPORT RESOURCES
 ===============================================================================
 
 Red Hat Documentation:
-  - OpenShift Docs: https://docs.openshift.com
-  - Agent-Based Installer: https://docs.openshift.com/container-platform/latest/installing/installing_with_agent_based_installer/
+  - OpenShift: https://docs.openshift.com
+  - Quay: https://docs.projectquay.io
 
 Red Hat Support:
   - Portal: https://access.redhat.com
   - Customer Portal: https://console.redhat.com
 
-Registry Documentation:
-  - Docker Registry: https://docs.docker.com/registry/
+mirror-registry CLI:
+  - Documentation: https://docs.openshift.com/container-platform/latest/installing/disconnected_install/installing-mirroring-creating-registry.html
 
 ===============================================================================
 EOF
 
-# Set proper permissions
-chmod 600 ${REGISTRY_BASE_PATH}/REGISTRY_COMPLETE_INFO.txt
-
-# Display the documentation
-cat ${REGISTRY_BASE_PATH}/REGISTRY_COMPLETE_INFO.txt
-```
-
-### 14.3 Create Quick Reference Card
-```bash
-cat > ${REGISTRY_BASE_PATH}/QUICK_REFERENCE.txt <<EOF
-=== QUICK REFERENCE ===
-
-Registry URL: https://${LOCAL_REGISTRY}
-User: ${REGISTRY_USER}
-Pass: ${REGISTRY_PASSWORD}
-
-Status: systemctl --user status container-mirror-registry.service
-Logs: podman logs -f mirror-registry
-Restart: systemctl --user restart container-mirror-registry.service
-
-ISO Location: ${REGISTRY_BASE_PATH}/mirror/agent-installer/agent.x86_64.iso
-ISO SHA256: $(cat ${REGISTRY_BASE_PATH}/mirror/agent-installer/agent.x86_64.iso.sha256 2>/dev/null || echo "Not calculated")
-
-Total Mirrors: $(curl -u ${REGISTRY_USER}:${REGISTRY_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog 2>/dev/null | jq -r '.repositories[]' | wc -l)
-Disk Usage: $(du -sh ${REGISTRY_BASE_PATH} | awk '{print $1}')
-EOF
-
-cat ${REGISTRY_BASE_PATH}/QUICK_REFERENCE.txt
-```
-
-### 14.4 Export Environment Variables for Future Use
-```bash
-cat >> ~/.bashrc <<EOF
-
-# OpenShift Mirror Registry Environment
-export REGISTRY_BASE_PATH="${REGISTRY_BASE_PATH}"
-export REGISTRY_HOST="${REGISTRY_HOST}"
-export REGISTRY_USER="${REGISTRY_USER}"
-export REGISTRY_PASSWORD="${REGISTRY_PASSWORD}"
-export LOCAL_REGISTRY="${LOCAL_REGISTRY}"
-export OCP_VERSION="${OCP_VERSION}"
-export OCP_CHANNEL="${OCP_CHANNEL}"
-export IMAGESET_CONFIG="${IMAGESET_CONFIG}"
-EOF
-
-# Source the updated bashrc
-source ~/.bashrc
+chmod 600 ${REGISTRY_BASE_PATH}/COMPLETE_DOCUMENTATION.txt
+cat ${REGISTRY_BASE_PATH}/COMPLETE_DOCUMENTATION.txt
 ```
 
 ---
 
-## Step 15: Final Verification and Testing
+## Step 15: Verification
 
-### 15.1 Complete System Check
+### 15.1 Create Verification Script
 ```bash
 cat > ${REGISTRY_BASE_PATH}/verify-setup.sh <<'EOF'
 #!/bin/bash
 
-echo "==============================================================================="
-echo "OPENSHIFT MIRROR REGISTRY - VERIFICATION SCRIPT"
-echo "==============================================================================="
-echo ""
-
-# Color codes
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-check_status() {
+check() {
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}✓${NC} $1"
-        return 0
     else
         echo -e "${RED}✗${NC} $1"
-        return 1
     fi
 }
 
-echo "1. Checking Environment Variables..."
-[ -n "$REGISTRY_BASE_PATH" ] && check_status "REGISTRY_BASE_PATH is set" || check_status "REGISTRY_BASE_PATH is NOT set"
-[ -n "$REGISTRY_HOST" ] && check_status "REGISTRY_HOST is set" || check_status "REGISTRY_HOST is NOT set"
-[ -n "$LOCAL_REGISTRY" ] && check_status "LOCAL_REGISTRY is set" || check_status "LOCAL_REGISTRY is NOT set"
+echo "==============================================================================="
+echo "MIRROR REGISTRY VERIFICATION"
+echo "==============================================================================="
 echo ""
 
-echo "2. Checking Directory Structure..."
-[ -d "$REGISTRY_BASE_PATH/registry" ] && check_status "Registry directory exists" || check_status "Registry directory missing"
-[ -d "$REGISTRY_BASE_PATH/mirror" ] && check_status "Mirror directory exists" || check_status "Mirror directory missing"
-[ -f "$REGISTRY_BASE_PATH/registry/certs/domain.crt" ] && check_status "SSL certificate exists" || check_status "SSL certificate missing"
-[ -f "$REGISTRY_BASE_PATH/registry/auth/htpasswd" ] && check_status "Auth file exists" || check_status "Auth file missing"
+echo "1. Environment Variables..."
+[ -n "$REGISTRY_BASE_PATH" ] && check "REGISTRY_BASE_PATH" || check "REGISTRY_BASE_PATH missing"
+[ -n "$REGISTRY_HOSTNAME" ] && check "REGISTRY_HOSTNAME" || check "REGISTRY_HOSTNAME missing"
 echo ""
 
-echo "3. Checking Disk Space..."
-DISK_AVAIL=$(df -h $REGISTRY_BASE_PATH | tail -1 | awk '{print $4}')
-echo -e "Available space on $REGISTRY_BASE_PATH: ${YELLOW}$DISK_AVAIL${NC}"
-DISK_USED=$(du -sh $REGISTRY_BASE_PATH | awk '{print $1}')
-echo -e "Total usage: ${YELLOW}$DISK_USED${NC}"
+echo "2. Disk Space..."
+AVAIL=$(df -h $REGISTRY_BASE_PATH | tail -1 | awk '{print $4}')
+USED=$(du -sh $REGISTRY_BASE_PATH | awk '{print $1}')
+echo -e "Available: ${YELLOW}$AVAIL${NC} | Used: ${YELLOW}$USED${NC}"
 echo ""
 
-echo "4. Checking Registry Container..."
-podman ps | grep -q mirror-registry && check_status "Registry container is running" || check_status "Registry container is NOT running"
-systemctl --user is-active container-mirror-registry.service > /dev/null 2>&1 && check_status "Registry service is active" || check_status "Registry service is NOT active"
+echo "3. Quay Services..."
+sudo podman ps | grep -q quay-app && check "quay-app running" || check "quay-app NOT running"
+sudo podman ps | grep -q quay-postgres && check "quay-postgres running" || check "quay-postgres NOT running"
+sudo podman ps | grep -q quay-redis && check "quay-redis running" || check "quay-redis NOT running"
 echo ""
 
-echo "5. Checking Network Connectivity..."
-curl -s -k https://$LOCAL_REGISTRY/v2/ > /dev/null && check_status "Registry is accessible" || check_status "Registry is NOT accessible"
-curl -s -u $REGISTRY_USER:$REGISTRY_PASSWORD -k https://$LOCAL_REGISTRY/v2/_catalog > /dev/null && check_status "Registry authentication works" || check_status "Registry authentication FAILED"
+echo "4. Registry Connectivity..."
+curl -s -k https://${LOCAL_REGISTRY}/v2/ > /dev/null && check "Registry accessible" || check "Registry NOT accessible"
+curl -s -u ${REGISTRY_INIT_USER}:${REGISTRY_INIT_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog > /dev/null && check "Authentication works" || check "Authentication failed"
 echo ""
 
-echo "6. Checking Mirrored Content..."
-REPO_COUNT=$(curl -s -u $REGISTRY_USER:$REGISTRY_PASSWORD -k https://$LOCAL_REGISTRY/v2/_catalog 2>/dev/null | jq -r '.repositories[]' | wc -l)
+echo "5. Mirrored Content..."
+REPO_COUNT=$(curl -s -u ${REGISTRY_INIT_USER}:${REGISTRY_INIT_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog 2>/dev/null | jq -r '.repositories[]' | wc -l)
 if [ "$REPO_COUNT" -gt 100 ]; then
-    check_status "Mirrored repositories: $REPO_COUNT (GOOD)"
-elif [ "$REPO_COUNT" -gt 0 ]; then
-    echo -e "${YELLOW}⚠${NC} Mirrored repositories: $REPO_COUNT (LOW - expected 100+)"
+    check "Repositories: $REPO_COUNT (GOOD)"
 else
-    echo -e "${RED}✗${NC} No repositories found - mirroring may have failed"
+    echo -e "${YELLOW}⚠${NC} Repositories: $REPO_COUNT (Expected 100+)"
 fi
 echo ""
 
-echo "7. Checking CLI Tools..."
-which oc > /dev/null && check_status "oc CLI is installed" || check_status "oc CLI is NOT installed"
-which openshift-install > /dev/null && check_status "openshift-install is installed" || check_status "openshift-install is NOT installed"
-which oc-mirror > /dev/null && check_status "oc-mirror is installed" || check_status "oc-mirror is NOT installed"
+echo "6. CLI Tools..."
+which oc > /dev/null && check "oc installed" || check "oc missing"
+which openshift-install > /dev/null && check "openshift-install installed" || check "openshift-install missing"
+which oc-mirror > /dev/null && check "oc-mirror installed" || check "oc-mirror missing"
 echo ""
 
-echo "8. Checking Critical Files..."
-[ -f "$REGISTRY_BASE_PATH/mirror/pull-secret.json" ] && check_status "Pull secret exists" || check_status "Pull secret missing"
-[ -f "$REGISTRY_BASE_PATH/mirror/imageset-config.yaml" ] && check_status "ImageSet config exists" || check_status "ImageSet config missing"
-RESULTS_DIR=$(ls -td $REGISTRY_BASE_PATH/mirror/oc-mirror-workspace/results-* 2>/dev/null | head -1)
-[ -n "$RESULTS_DIR" ] && check_status "oc-mirror results exist" || check_status "oc-mirror results missing"
-[ -f "$REGISTRY_BASE_PATH/mirror/agent-installer/agent.x86_64.iso" ] && check_status "Agent ISO exists" || check_status "Agent ISO missing"
+echo "7. Critical Files..."
+[ -f "${REGISTRY_BASE_PATH}/mirror/pull-secret.json" ] && check "Pull secret" || check "Pull secret missing"
+[ -f "${REGISTRY_BASE_PATH}/mirror/imageset-config.yaml" ] && check "ImageSet config" || check "ImageSet config missing"
+[ -f "${REGISTRY_BASE_PATH}/mirror/agent-installer/agent.x86_64.iso" ] && check "Agent ISO" || check "Agent ISO missing"
 echo ""
 
-echo "9. Checking SSL Certificate..."
-CERT_EXPIRY=$(openssl x509 -in $REGISTRY_BASE_PATH/registry/certs/domain.crt -noout -enddate | cut -d= -f2)
-echo -e "Certificate expires: ${YELLOW}$CERT_EXPIRY${NC}"
-trust list | grep -q "$REGISTRY_HOST" && check_status "Certificate is trusted system-wide" || check_status "Certificate is NOT trusted"
+echo "8. Certificate Trust..."
+trust list | grep -q "$REGISTRY_HOSTNAME" && check "Certificate trusted" || check "Certificate NOT trusted"
 echo ""
 
 echo "==============================================================================="
 echo "VERIFICATION COMPLETE"
 echo "==============================================================================="
 echo ""
-echo "Registry URL: https://$LOCAL_REGISTRY"
-echo "Mirrored Repositories: $REPO_COUNT"
-echo "Total Disk Usage: $DISK_USED"
+echo "Registry: https://${LOCAL_REGISTRY}"
+echo "Repositories: $REPO_COUNT"
+echo "Disk Usage: $USED"
+echo ""
+echo "Access Web UI: https://${REGISTRY_HOSTNAME}:8443"
+echo "Username: ${REGISTRY_INIT_USER}"
 echo ""
 EOF
 
 chmod +x ${REGISTRY_BASE_PATH}/verify-setup.sh
 ```
 
-### 15.2 Run Verification Script
+### 15.2 Run Verification
 ```bash
 ${REGISTRY_BASE_PATH}/verify-setup.sh
-```
-
-### 15.3 Test Image Pull from Registry
-```bash
-# Test pulling a base image
-podman pull --tls-verify=false ${LOCAL_REGISTRY}/ubi9/ubi:latest
-
-# Verify it was pulled
-podman images | grep ${LOCAL_REGISTRY}
-
-# Clean up test image
-podman rmi ${LOCAL_REGISTRY}/ubi9/ubi:latest
-```
-
-### 15.4 Validate Agent ISO
-```bash
-# Check ISO size (should be 1-2 GB)
-ls -lh ${REGISTRY_BASE_PATH}/mirror/agent-installer/agent.x86_64.iso
-
-# Verify ISO checksum
-cd ${REGISTRY_BASE_PATH}/mirror/agent-installer
-sha256sum -c agent.x86_64.iso.sha256
 ```
 
 ---
 
 ## Troubleshooting Guide
 
-### Issue 1: Registry Container Won't Start
+### Issue 1: mirror-registry Installation Fails
+
 ```bash
-# Check logs
-podman logs mirror-registry
+# Check system requirements
+df -h ${REGISTRY_BASE_PATH}  # Need 500GB+
+free -h  # Need 16GB+ RAM
 
-# Check if port is in use
-sudo ss -tlnp | grep 5000
+# Check for port conflicts
+sudo ss -tlnp | grep -E '8443|5432|6379'
 
-# Kill conflicting process if needed
-sudo kill $(sudo lsof -t -i:5000)
+# View installation logs
+cat ${REGISTRY_BASE_PATH}/.quay-install.log
 
-# Restart registry
-podman restart mirror-registry
+# Uninstall and retry
+cd ${REGISTRY_BASE_PATH}
+./mirror-registry uninstall --quayRoot ${REGISTRY_INSTALL_PATH} --autoApprove
+./mirror-registry install --quayHostname ${REGISTRY_HOSTNAME} --quayRoot ${REGISTRY_INSTALL_PATH} --initUser ${REGISTRY_INIT_USER} --initPassword ${REGISTRY_INIT_PASSWORD} --verbose
 ```
 
-### Issue 2: Certificate Not Trusted
+### Issue 2: Quay Services Not Starting
+
+```bash
+# Check all containers
+sudo podman ps -a
+
+# Check specific service logs
+sudo podman logs quay-app
+sudo podman logs quay-postgres
+sudo podman logs quay-redis
+
+# Restart services
+cd ${REGISTRY_BASE_PATH}
+./mirror-registry restart --quayRoot ${REGISTRY_INSTALL_PATH}
+
+# If restart fails, try pause/unpause
+./mirror-registry pause --quayRoot ${REGISTRY_INSTALL_PATH}
+sleep 10
+./mirror-registry unpause --quayRoot ${REGISTRY_INSTALL_PATH}
+```
+
+### Issue 3: Cannot Access Web UI
+
+```bash
+# Check firewall
+sudo firewall-cmd --list-ports | grep 8443
+
+# Add port if missing
+sudo firewall-cmd --permanent --add-port=8443/tcp
+sudo firewall-cmd --reload
+
+# Check if Quay is listening
+sudo ss -tlnp | grep 8443
+
+# Test locally
+curl -k https://localhost:8443/health/instance
+```
+
+### Issue 4: Certificate Not Trusted
+
 ```bash
 # Re-trust certificate
-sudo cp ${REGISTRY_BASE_PATH}/registry/certs/domain.crt /etc/pki/ca-trust/source/anchors/${REGISTRY_HOST}.crt
+sudo cp ${REGISTRY_INSTALL_PATH}/quay-rootCA/rootCA.pem /etc/pki/ca-trust/source/anchors/$(hostname -f).crt
 sudo update-ca-trust extract
 
 # Verify
-trust list | grep ${REGISTRY_HOST}
+trust list | grep $(hostname -f)
 
-# For Podman specifically
-mkdir -p ~/.config/containers/certs.d/${REGISTRY_HOST}:5000
-cp ${REGISTRY_BASE_PATH}/registry/certs/domain.crt ~/.config/containers/certs.d/${REGISTRY_HOST}:5000/ca.crt
+# For Podman
+mkdir -p ~/.config/containers/certs.d/${REGISTRY_HOSTNAME}:8443
+cp ${REGISTRY_INSTALL_PATH}/quay-rootCA/rootCA.pem ~/.config/containers/certs.d/${REGISTRY_HOSTNAME}:8443/ca.crt
 ```
 
-### Issue 3: oc-mirror Fails During Mirroring
+### Issue 5: oc-mirror Fails
+
 ```bash
 # Check disk space
 df -h ${REGISTRY_BASE_PATH}
 
-# Check network connectivity
+# Check network
 ping -c 3 registry.redhat.io
 ping -c 3 quay.io
 
-# Resume mirroring with continue-on-error
+# Resume with continue-on-error
 cd ${REGISTRY_BASE_PATH}/mirror
 oc-mirror --config=${IMAGESET_CONFIG} \
   docker://${LOCAL_REGISTRY} \
   --dest-skip-tls \
   --continue-on-error \
   --from=${REGISTRY_BASE_PATH}/mirror/oc-mirror-workspace
-
-# Check specific operator availability
-oc-mirror list operators --catalog registry.redhat.io/redhat/redhat-operator-index:v4.19
-```
-
-### Issue 4: Pull Secret Authentication Fails
-```bash
-# Verify pull secret format
-jq . ${REGISTRY_BASE_PATH}/mirror/pull-secret.json
-
-# Test each registry in pull secret
-for registry in $(jq -r '.auths | keys[]' ${REGISTRY_BASE_PATH}/mirror/pull-secret.json); do
-  echo "Testing $registry..."
-  podman login $registry --authfile ${REGISTRY_BASE_PATH}/mirror/pull-secret.json
-done
-
-# Re-download pull secret if needed from:
-# https://console.redhat.com/openshift/install/pull-secret
-```
-
-### Issue 5: Agent ISO Creation Fails
-```bash
-# Check prerequisites
-openshift-install version
-test -f ${REGISTRY_BASE_PATH}/mirror/agent-installer/install-config.yaml && echo "OK" || echo "MISSING"
-test -f ${REGISTRY_BASE_PATH}/mirror/agent-installer/agent-config.yaml && echo "OK" || echo "MISSING"
-
-# Check for errors in log
-tail -100 ${REGISTRY_BASE_PATH}/mirror/agent-installer/.openshift_install.log
-
-# Validate YAML syntax
-python3 -c "import yaml; yaml.safe_load(open('${REGISTRY_BASE_PATH}/mirror/agent-installer/install-config.yaml'))" && echo "Valid YAML" || echo "Invalid YAML"
-
-# Clean and retry
-rm -rf ${REGISTRY_BASE_PATH}/mirror/agent-installer/{.openshift_install*,auth,agent.*}
-openshift-install agent create image --log-level=debug
 ```
 
 ### Issue 6: Disk Space Full
-```bash
-# Check what's using space
-du -sh ${REGISTRY_BASE_PATH}/* | sort -hr
 
-# Clean up oc-mirror workspace (after successful mirror)
+```bash
+# Check usage
+du -sh ${REGISTRY_INSTALL_PATH}/*
+
+# Clean workspace after successful mirror
 rm -rf ${REGISTRY_BASE_PATH}/mirror/oc-mirror-workspace/src/
 
-# Run registry garbage collection
-podman exec mirror-registry registry garbage-collect /etc/docker/registry/config.yml --delete-untagged=true --dry-run
-
-# If safe, run without dry-run
-podman exec mirror-registry registry garbage-collect /etc/docker/registry/config.yml --delete-untagged=true
+# Check Quay storage
+du -sh ${REGISTRY_INSTALL_PATH}/quay-storage
 
 # Remove old downloads
-rm -rf ${REGISTRY_BASE_PATH}/mirror/downloads/*.tar.gz
-```
-
-### Issue 7: Registry Performance Issues
-```bash
-# Check registry container resources
-podman stats mirror-registry
-
-# Check system resources
-htop
-
-# Increase container resources (if using podman with resource limits)
-podman update --cpus=4 --memory=8g mirror-registry
-
-# Restart with more resources
-podman stop mirror-registry
-podman rm mirror-registry
-
-# Recreate with resource limits
-podman run -d \
-  --name mirror-registry \
-  --restart always \
-  --cpus=4 \
-  --memory=8g \
-  -p 5000:5000 \
-  -v ${REGISTRY_BASE_PATH}/registry/data:/var/lib/registry:z \
-  -v ${REGISTRY_BASE_PATH}/registry/auth:/auth:z \
-  -v ${REGISTRY_BASE_PATH}/registry/certs:/certs:z \
-  -v ${REGISTRY_BASE_PATH}/registry/config.yml:/etc/docker/registry/config.yml:z \
-  docker.io/library/registry:2
-```
-
-### Issue 8: imageContentSourcePolicy Not Applied
-```bash
-# Verify the file exists and has content
-cat ${REGISTRY_BASE_PATH}/mirror/install-config/imageContentSourcePolicy.yaml
-
-# Check if it's properly embedded in install-config.yaml
-grep -A 20 "imageContentSources:" ${REGISTRY_BASE_PATH}/mirror/agent-installer/install-config.yaml
-
-# Re-embed if needed
-sed -i '/imageContentSources:/,$d' ${REGISTRY_BASE_PATH}/mirror/agent-installer/install-config.yaml
-echo "imageContentSources:" >> ${REGISTRY_BASE_PATH}/mirror/agent-installer/install-config.yaml
-grep -A 1000 "repositoryDigestMirrors:" ${REGISTRY_BASE_PATH}/mirror/install-config/imageContentSourcePolicy.yaml | sed 's/^/  /' | grep -v "apiVersion\|kind\|metadata" >> ${REGISTRY_BASE_PATH}/mirror/agent-installer/install-config.yaml
+rm -rf ${REGISTRY_BASE_PATH}/downloads/*.tar.gz
 ```
 
 ---
 
-## Maintenance and Updates
+## Maintenance
 
-### Update Mirrored Content
+### Update Mirror Content
+
 ```bash
-# Backup current state
+cd ${REGISTRY_BASE_PATH}/mirror
+
+# Backup current results
 tar -czf ${REGISTRY_BASE_PATH}/backup/pre-update-$(date +%Y%m%d).tar.gz \
-  ${REGISTRY_BASE_PATH}/mirror/oc-mirror-workspace/results-*
+  oc-mirror-workspace/results-*
 
-# Update to latest patch version in channel
-cd ${REGISTRY_BASE_PATH}/mirror
-oc-mirror --config=${IMAGESET_CONFIG} \
-  docker://${LOCAL_REGISTRY} \
-  --dest-skip-tls \
-  --continue-on-error \
-  --skip-pruning
-
-# Verify new content
-curl -u ${REGISTRY_USER}:${REGISTRY_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog | jq
-```
-
-### Add New Operators
-```bash
-# Edit imageset config
-vi ${REGISTRY_BASE_PATH}/mirror/imageset-config.yaml
-
-# Add new operators under the packages section, for example:
-#   - name: cert-manager-operator
-#   - name: node-observability-operator
-
-# Run incremental mirror
-cd ${REGISTRY_BASE_PATH}/mirror
+# Run incremental update
 oc-mirror --config=${IMAGESET_CONFIG} \
   docker://${LOCAL_REGISTRY} \
   --dest-skip-tls \
   --continue-on-error
 ```
 
-### Monitor Registry Health
+### Upgrade mirror-registry
+
 ```bash
-# Create monitoring script
-cat > ${REGISTRY_BASE_PATH}/registry/monitor.sh <<'EOF'
-#!/bin/bash
+cd ${REGISTRY_BASE_PATH}
 
-REGISTRY_BASE_PATH="/data"  # Change to your path
-LOCAL_REGISTRY="$(hostname -f):5000"
-REGISTRY_USER="admin"
-REGISTRY_PASSWORD="RedHat@2026"
+# Download latest version
+wget https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/mirror-registry/latest/mirror-registry.tar.gz
+tar -xzf mirror-registry.tar.gz
 
-echo "=== Registry Health Check: $(date) ===" 
+# Upgrade
+./mirror-registry upgrade --quayRoot ${REGISTRY_INSTALL_PATH}
+```
 
-# Check container status
-if podman ps | grep -q mirror-registry; then
-    echo "✓ Container: Running"
-else
-    echo "✗ Container: Not Running"
-    podman start mirror-registry
-fi
+### Backup Registry
 
-# Check connectivity
-if curl -s -k https://${LOCAL_REGISTRY}/v2/ > /dev/null; then
-    echo "✓ Connectivity: OK"
-else
-    echo "✗ Connectivity: Failed"
-fi
+```bash
+# Stop services
+cd ${REGISTRY_BASE_PATH}
+./mirror-registry pause --quayRoot ${REGISTRY_INSTALL_PATH}
 
-# Check disk space
-DISK_USAGE=$(df -h $REGISTRY_BASE_PATH | tail -1 | awk '{print $5}' | tr -d '%')
-if [ $DISK_USAGE -lt 80 ]; then
-    echo "✓ Disk Usage: ${DISK_USAGE}% (OK)"
-elif [ $DISK_USAGE -lt 90 ]; then
-    echo "⚠ Disk Usage: ${DISK_USAGE}% (Warning)"
-else
-    echo "✗ Disk Usage: ${DISK_USAGE}% (Critical)"
-fi
+# Backup data
+tar -czf ${REGISTRY_BASE_PATH}/backup/quay-full-$(date +%Y%m%d).tar.gz \
+  ${REGISTRY_INSTALL_PATH}
 
-# Check repository count
-REPO_COUNT=$(curl -s -u ${REGISTRY_USER}:${REGISTRY_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog 2>/dev/null | jq -r '.repositories[]' | wc -l)
-echo "✓ Repositories: $REPO_COUNT"
-
-echo ""
-EOF
-
-chmod +x ${REGISTRY_BASE_PATH}/registry/monitor.sh
-
-# Add to crontab for daily monitoring
-(crontab -l 2>/dev/null; echo "0 9 * * * ${REGISTRY_BASE_PATH}/registry/monitor.sh >> ${REGISTRY_BASE_PATH}/registry/monitor.log 2>&1") | crontab -
+# Restart services
+./mirror-registry unpause --quayRoot ${REGISTRY_INSTALL_PATH}
 ```
 
 ---
@@ -1982,94 +1410,40 @@ chmod +x ${REGISTRY_BASE_PATH}/registry/monitor.sh
 
 ```bash
 cat > ${REGISTRY_BASE_PATH}/FINAL_CHECKLIST.txt <<EOF
-=== OPENSHIFT MIRROR REGISTRY - FINAL CHECKLIST ===
+=== MIRROR REGISTRY SETUP - FINAL CHECKLIST ===
 
-Pre-Installation:
-  [✓] Dedicated user 'mirror-user' created
-  [✓] Dedicated mount point configured
-  [✓] Required packages installed
-  [✓] Firewall configured
-  [✓] SELinux configured
+[✓] mirror-user created
+[✓] Dedicated mount point configured (${REGISTRY_BASE_PATH})
+[✓] mirror-registry CLI installed
+[✓] Quay registry installed and running
+[✓] Certificate trusted system-wide
+[✓] Firewall configured
+[✓] CLI tools installed (oc, openshift-install, oc-mirror)
+[✓] Pull secret configured
+[✓] ImageSetConfiguration created
+[✓] Content mirrored (OpenShift ${OCP_VERSION} + Operators)
+[✓] imageContentSourcePolicy generated
+[✓] Agent ISO created
+[✓] Backup completed
+[✓] Documentation generated
 
-Registry Setup:
-  [✓] Directory structure created
-  [✓] SSL certificates generated and trusted
-  [✓] Authentication configured
-  [✓] Registry container deployed and running
-  [✓] Systemd service enabled
+Registry Access:
+  Web UI: https://${REGISTRY_HOSTNAME}:8443
+  API: ${LOCAL_REGISTRY}
+  User: ${REGISTRY_INIT_USER}
 
-CLI Tools:
-  [✓] oc CLI installed (version $OCP_VERSION)
-  [✓] openshift-install installed (version $OCP_VERSION)
-  [✓] oc-mirror installed
-  [✓] All tools verified
+Repositories Mirrored: $(curl -s -u ${REGISTRY_INIT_USER}:${REGISTRY_INIT_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog 2>/dev/null | jq -r '.repositories[]' | wc -l)
+Disk Usage: $(du -sh ${REGISTRY_BASE_PATH} | awk '{print $1}')
 
-Pull Secret:
-  [✓] Pull secret downloaded from Red Hat
-  [✓] Pull secret saved locally
-  [✓] Mirror registry credentials added
-  [✓] Pull secret format validated
-
-Mirroring:
-  [✓] ImageSetConfiguration created
-  [✓] oc-mirror completed successfully
-  [✓] OpenShift ${OCP_VERSION} mirrored
-  [✓] All operators mirrored
-  [✓] Additional images mirrored
-  [✓] imageContentSourcePolicy generated
-  [✓] CatalogSource manifests generated
-
-Agent ISO:
-  [✓] install-config.yaml created
-  [✓] agent-config.yaml created
-  [✓] SSH key configured
-  [✓] Agent ISO generated successfully
-  [✓] ISO checksum calculated
-
-Post-Configuration:
-  [✓] Registry garbage collection configured
-  [✓] Monitoring scripts created
-  [✓] Backup completed
-  [✓] Documentation generated
-  [✓] Verification script run successfully
-
-Red Hat Products Mirrored:
-  [✓] OpenShift Container Platform ${OCP_VERSION}
-  [✓] OpenShift Data Foundation
-  [✓] Local Storage Operator
-  [✓] MetalLB Operator
-  [✓] Service Mesh
-  [✓] Serverless
-  [✓] Pipelines
-  [✓] GitOps
-  [✓] Virtualization
-  [✓] Advanced Cluster Security
-  [✓] Quay Registry
-  [✓] Logging Stack
-  [✓] Migration Toolkits
-  [✓] Ansible Automation Platform
-  [✓] Advanced Cluster Management
-  [✓] Compliance Operator
-  [✓] And 10+ additional operators
-
-Final Verification:
-  Registry URL: https://${LOCAL_REGISTRY}
-  Mirrored Repositories: $(curl -s -u ${REGISTRY_USER}:${REGISTRY_PASSWORD} -k https://${LOCAL_REGISTRY}/v2/_catalog 2>/dev/null | jq -r '.repositories[]' | wc -l)
-  Total Disk Usage: $(du -sh ${REGISTRY_BASE_PATH} 2>/dev/null | awk '{print $1}')
-  Agent ISO: ${REGISTRY_BASE_PATH}/mirror/agent-installer/agent.x86_64.iso
-
-=== SETUP COMPLETE - READY FOR OPENSHIFT INSTALLATION ===
+Agent ISO: ${REGISTRY_BASE_PATH}/mirror/agent-installer/agent.x86_64.iso
 
 Next Steps:
 1. Copy agent.x86_64.iso to bootable media
-2. Boot target machines from the ISO
-3. Monitor installation progress
-4. Access cluster after installation completes
+2. Boot target machines from ISO
+3. Monitor installation
 
-Documentation Location: ${REGISTRY_BASE_PATH}/REGISTRY_COMPLETE_INFO.txt
-Quick Reference: ${REGISTRY_BASE_PATH}/QUICK_REFERENCE.txt
-Verification Script: ${REGISTRY_BASE_PATH}/verify-setup.sh
-
+Documentation: ${REGISTRY_BASE_PATH}/COMPLETE_DOCUMENTATION.txt
+Verification: ${REGISTRY_BASE_PATH}/verify-setup.sh
 EOF
 
 cat ${REGISTRY_BASE_PATH}/FINAL_CHECKLIST.txt
@@ -2077,115 +1451,13 @@ cat ${REGISTRY_BASE_PATH}/FINAL_CHECKLIST.txt
 
 ---
 
-## Appendix A: Network Configuration Examples
+**SETUP COMPLETE!** 🎉
 
-### Static IP Configuration for Multiple Interfaces
-```yaml
-# Example for a host with multiple network interfaces
-- hostname: master-0
-  role: master
-  interfaces:
-    - name: ens192
-      macAddress: "00:50:56:00:00:01"
-    - name: ens224
-      macAddress: "00:50:56:00:00:11"
-  networkConfig:
-    interfaces:
-      - name: ens192
-        type: ethernet
-        state: up
-        ipv4:
-          enabled: true
-          address:
-            - ip: 192.168.1.20
-              prefix-length: 24
-          dhcp: false
-      - name: ens224
-        type: ethernet
-        state: up
-        ipv4:
-          enabled: true
-          address:
-            - ip: 10.0.0.20
-              prefix-length: 24
-          dhcp: false
-    dns-resolver:
-      config:
-        server:
-          - 192.168.1.1
-          - 8.8.8.8
-    routes:
-      config:
-        - destination: 0.0.0.0/0
-          next-hop-address: 192.168.1.1
-          next-hop-interface: ens192
-          table-id: 254
-```
+You now have a fully functional mirror registry using Red Hat's official `mirror-registry` CLI tool with:
+- ✅ Quay registry with web UI
+- ✅ All OpenShift 4.19 content mirrored
+- ✅ 20+ Red Hat operators mirrored
+- ✅ Agent ISO ready for installation
+- ✅ Complete documentation and verification
 
----
-
-## Appendix B: Updating to Newer OpenShift Versions
-
-### Update to 4.19.1 or newer patch version
-```bash
-# Set new version
-export OCP_VERSION=4.19.1
-
-# Update imageset config
-sed -i "s/minVersion: 4.19.0/minVersion: $OCP_VERSION/" ${REGISTRY_BASE_PATH}/mirror/imageset-config.yaml
-sed -i "s/maxVersion: 4.19.0/maxVersion: $OCP_VERSION/" ${REGISTRY_BASE_PATH}/mirror/imageset-config.yaml
-
-# Mirror new version
-cd ${REGISTRY_BASE_PATH}/mirror
-oc-mirror --config=${IMAGESET_CONFIG} \
-  docker://${LOCAL_REGISTRY} \
-  --dest-skip-tls \
-  --continue-on-error
-
-# Generate new ISO if needed
-cd ${REGISTRY_BASE_PATH}/mirror/agent-installer
-# Update install-config.yaml with new version requirements
-openshift-install agent create image --log-level=debug
-```
-
----
-
-## Appendix C: Useful Commands Reference
-
-```bash
-# List all available OpenShift versions
-oc-mirror list releases --channel ${OCP_CHANNEL}
-
-# List available operators in catalog
-oc-mirror list operators --catalog registry.redhat.io/redhat/redhat-operator-index:v4.19
-
-# Check specific operator versions
-oc-mirror list operators --catalog registry.redhat.io/redhat/redhat-operator-index:v4.19 --package local-storage-operator
-
-# Export registry data for offline transfer
-podman save $(podman images -q) -o ${REGISTRY_BASE_PATH}/backup/all-images-$(date +%Y%m%d).tar
-
-# Check registry storage usage by repository
-du -sh ${REGISTRY_BASE_PATH}/registry/data/docker/registry/v2/repositories/* | sort -hr | head -20
-
-# Test image pull from mirror
-oc adm release info ${LOCAL_REGISTRY}/ocp4/openshift4:${OCP_VERSION}-x86_64 --insecure=true
-
-# Validate YAML files
-for file in ${REGISTRY_BASE_PATH}/mirror/agent-installer/*.yaml; do
-  echo "Validating $file..."
-  python3 -c "import yaml; yaml.safe_load(open('$file'))" && echo "✓ Valid" || echo "✗ Invalid"
-done
-```
-
----
-
-**Document Version**: 2.0  
-**Last Updated**: January 2026  
-**OpenShift Version**: 4.19.0  
-**Maintained by**: mirror-user  
-
-**For support or questions**:
-- Red Hat OpenShift Documentation: https://docs.openshift.com
-- Red Hat Customer Portal: https://access.redhat.com
-- Verification Script: `${REGISTRY_BASE_PATH}/verify-setup.sh`
+**Next**: Boot your machines with the agent ISO and OpenShift will install using your mirror registry!
