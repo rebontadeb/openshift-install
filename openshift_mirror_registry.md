@@ -616,6 +616,29 @@ ls -lh ${REGISTRY_BASE_PATH}/mirror/oc-mirror-workspace/results-*/imageContentSo
 ls -lh ${REGISTRY_BASE_PATH}/mirror/oc-mirror-workspace/results-*/catalogSource-*.yaml
 ```
 
+
+Export Environment Variables to clone images from Openshift Official Image Registry
+```
+export OCP_VERSION="4.19.0"  # Adjust to your desired version
+export LOCAL_REGISTRY="${REGISTRY_HOST}:8443"
+export LOCAL_REPOSITORY="ocp4/openshift4"
+export PRODUCT_REPO="openshift-release-dev"
+export LOCAL_SECRET_JSON="${REGISTRY_BASE_PATH}/mirror/pull-secret.json"
+export RELEASE_NAME="ocp-release"
+export ARCHITECTURE="x86_64"
+```
+
+```
+oc adm release mirror  \
+-a ${LOCAL_SECRET_JSON} \  --from=quay.io/${PRODUCT_REPO}/${RELEASE_NAME}:${OCP_VERSION}-${ARCHITECTURE} \
+--to=${LOCAL_REGISTRY}/${LOCAL_REPOSITORY} \  --to-release-image=${LOCAL_REGISTRY}/${LOCAL_REPOSITORY}:${OCP_VERSION}-${ARCHITECTURE}  \
+ --insecure=true
+```
+
+
+
+
+
 ---
 
 ## Step 10: Verify Mirrored Content
