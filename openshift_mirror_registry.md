@@ -169,7 +169,7 @@ chmod +x mirror-registry
 
 ### 2.3 Verify Installation
 ```bash
-./mirror-registry version
+./mirror-registry --version
 ```
 
 ---
