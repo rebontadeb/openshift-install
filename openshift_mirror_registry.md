@@ -630,9 +630,11 @@ export ARCHITECTURE="x86_64"
 
 ```
 oc adm release mirror  \
--a ${LOCAL_SECRET_JSON} \  --from=quay.io/${PRODUCT_REPO}/${RELEASE_NAME}:${OCP_VERSION}-${ARCHITECTURE} \
---to=${LOCAL_REGISTRY}/${LOCAL_REPOSITORY} \  --to-release-image=${LOCAL_REGISTRY}/${LOCAL_REPOSITORY}:${OCP_VERSION}-${ARCHITECTURE}  \
- --insecure=true
+--from=quay.io/${PRODUCT_REPO}/${RELEASE_NAME}:${OCP_VERSION}-${ARCHITECTURE} 
+--to=${LOCAL_REGISTRY}/${LOCAL_REPOSITORY} \  
+--to-release-image=${LOCAL_REGISTRY}/${LOCAL_REPOSITORY}:${OCP_VERSION}-${ARCHITECTURE}  \
+--registry-config=${LOCAL_SECRET_JSON} \  
+--insecure=true
 
 ```
 
