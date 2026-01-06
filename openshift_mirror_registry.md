@@ -193,10 +193,13 @@ echo "export REGISTRY_HOST=\"${REGISTRY_HOST}\"" >> ~/.bashrc
 ### 3.2 Run mirror-registry Installation
 ```bash
 cd ${REGISTRY_BASE_PATH}
+mkdir -p ${REGISTRY_BASE_PATH}/registry/data/mirror-data
+
 
 sudo ./mirror-registry install \
   --quayHostname ${REGISTRY_HOST} \
   --quayRoot ${REGISTRY_BASE_PATH}/registry/data \
+  --quayStorage ${REGISTRY_BASE_PATH}/registry/data/mirror-data
   --initUser ${REGISTRY_USER} \
   --initPassword ${REGISTRY_PASSWORD} \
   --sslCert ${REGISTRY_BASE_PATH}/registry/certs/domain.crt \  
