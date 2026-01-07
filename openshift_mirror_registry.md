@@ -470,8 +470,9 @@ cat > ${REGISTRY_BASE_PATH}/mirror/imageset-config.yaml <<EOF
 kind: ImageSetConfiguration
 apiVersion: mirror.openshift.io/v1alpha2
 storageConfig:
-  local:
-    path: ${REGISTRY_BASE_PATH}/mirror/oc-mirror-workspace
+  registry:
+    imageURL: ${LOCAL_REGISTRY}/ocp4/openshift4
+    skipTLS: true    
 mirror:
   platform:
     channels:
@@ -565,8 +566,9 @@ cat > ${REGISTRY_BASE_PATH}/mirror/imageset-config-minimal.yaml <<EOF
 kind: ImageSetConfiguration
 apiVersion: mirror.openshift.io/v1alpha2
 storageConfig:
-  local:
-    path: ${REGISTRY_BASE_PATH}/mirror/oc-mirror-workspace
+  registry:
+    imageURL: ${LOCAL_REGISTRY}/ocp4/openshift4
+    skipTLS: true    
 mirror:
   platform:
     channels:
