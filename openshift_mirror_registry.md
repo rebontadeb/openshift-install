@@ -426,35 +426,39 @@ mkdir -p ${REGISTRY_BASE_PATH}/mirror/oc-mirror-workspace
 ### 8.1.1 Before Creating ImageSetConfiguration , We can check all catalog Items
 
 
-- 1. Red Hat Operators (Primary Catalog) : registry.redhat.io/redhat/redhat-operator-index:v4.19
-- 2. Certified Operators : registry.redhat.io/redhat/certified-operator-index:v4.19
-- 3. Community Operators : registry.redhat.io/redhat/community-operator-index:v4.19
-- 4. Red Hat Marketplace Operators : registry.redhat.io/redhat/redhat-marketplace-index:v4.19
+- Red Hat Operators (Primary Catalog) : registry.redhat.io/redhat/redhat-operator-index:v4.19
+- Certified Operators : registry.redhat.io/redhat/certified-operator-index:v4.19
+- Community Operators : registry.redhat.io/redhat/community-operator-index:v4.19
+- Red Hat Marketplace Operators : registry.redhat.io/redhat/redhat-marketplace-index:v4.19
 
+### List All Available Operators First
+```
+wget https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/latest/opm-linux.tar.gz
+tar -xvf opm-linux.tar.gz
+sudo mv opm /usr/local/bin/
 
-  ### List All Available Operators First
-  ```
-  wget https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/latest/opm-linux.tar.gz
-  tar -xvf opm-linux.tar.gz
-  sudo mv opm /usr/local/bin/
-
-  # List all operators in the catalog
-  oc-mirror list operators --catalog=registry.redhat.io/redhat/redhat-operator-index:v4.19
-  ```
+# List all operators in the catalog
+export REGISTRY_AUTH_FILE=${REGISTRY_BASE_PATH}/mirror/pull-secret.json
+oc-mirror list operators --catalog=registry.redhat.io/redhat/redhat-operator-index:v4.19
+```
 
 
 
 ```
 # Red Hat Operators
+export REGISTRY_AUTH_FILE=${REGISTRY_BASE_PATH}/mirror/pull-secret.json
 oc-mirror list operators --catalog=registry.redhat.io/redhat/redhat-operator-index:v4.19
 
 # Certified Operators
+export REGISTRY_AUTH_FILE=${REGISTRY_BASE_PATH}/mirror/pull-secret.json
 oc-mirror list operators --catalog=registry.redhat.io/redhat/certified-operator-index:v4.19
 
 # Community Operators
+export REGISTRY_AUTH_FILE=${REGISTRY_BASE_PATH}/mirror/pull-secret.json
 oc-mirror list operators --catalog=registry.redhat.io/redhat/community-operator-index:v4.19
 
 # Marketplace Operators
+export REGISTRY_AUTH_FILE=${REGISTRY_BASE_PATH}/mirror/pull-secret.json
 oc-mirror list operators --catalog=registry.redhat.io/redhat/redhat-marketplace-index:v4.19
 ```
 
@@ -579,7 +583,13 @@ mirror:
         - name: metallb-operator
   
   additionalImages:
+    # Base images used by many operators
+    - name: registry.redhat.io/ubi8/ubi:latest
     - name: registry.redhat.io/ubi9/ubi:latest
+    
+    # Common utility images
+    - name: registry.redhat.io/openshift4/ose-cli:v4.19
+    - name: registry.redhat.io/openshift4/ose-tools-rhel8:v4.19      
   
   helm: {}
 EOF
