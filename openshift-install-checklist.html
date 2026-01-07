@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenShift Enterprise Air-Gap Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .sticky-header { position: sticky; top: 0; z-index: 50; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+        @media print {
+            .no-print { display: none !important; }
+            .sticky-header { position: relative !important; }
+            body { background: white !important; }
+            textarea { height: auto !important; border: none !important; }
+            .section-content { display: block !important; }
+        }
+        
+        /* Modern Status Pill Styling */
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 9999px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            border: 1px solid transparent;
+            user-select: none;
+        }
+        .status-pill:hover { transform: translateY(-1px); box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .status-pill:active { transform: translateY(0); }
+
+        .pill-pending { background: #f3f4f6; color: #4b5563; border-color: #e5e7eb; }
+        .pill-progress { background: #dbeafe; color: #1d4ed8; border-color: #bfdbfe; }
+        .pill-blocked { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
+        .pill-completed { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
+
+        .row-pending { background-color: #ffffff; }
+        .row-progress { background-color: #f8faff; }
+        .row-blocked { background-color: #fff9f9; }
+        .row-completed { background-color: #f9fffb; }
+
+        /* Custom Checkbox */
+        .checkbox-custom:checked + div { background-color: #10b981; border-color: #059669; }
+    </style>
+</head>
+<body class="bg-slate-100 font-sans text-slate-900">
+
+    <div class="max-w-7xl mx-auto bg-white min-h-screen shadow-2xl border-x border-gray-200">
+        
+        <header class="bg-[#CC0000] p-6 text-white sticky-header">
+            <div class="flex flex-col lg:flex-row justify-between items-center gap-6">
+                <div class="flex items-center gap-4">
+                    <div class="bg-white p-2 rounded-lg shadow-inner">
+                        <svg class="w-8 h-8 text-[#CC0000]" fill="currentColor" viewBox="0 0 24 24"><path d="M12 .5L22.5 6v12L12 23.5 1.5 18V6L12 .5zm0 2.44L3.5 7.42v9.16l8.5 4.98 8.5-4.98V7.42L12 2.94z"/></svg>
+                    </div>
+                    <div>
+                        <h1 class="text-2xl font-black leading-none uppercase tracking-tighter">OCP Air-Gap Master</h1>
+                        <h2 class="text-xs font-medium opacity-70 uppercase mt-1 tracking-[0.2em]">Enterprise Deployment Roadmap</h2>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 w-full lg:w-auto">
+                    <div class="bg-white/10 backdrop-blur-md p-3 rounded-lg border border-white/20 text-center">
+                        <div class="text-[9px] uppercase font-bold opacity-60">Progress</div>
+                        <div class="text-xl font-black" id="overall-progress">0%</div>
+                    </div>
+                    <div class="bg-white/10 backdrop-blur-md p-3 rounded-lg border border-white/20 text-center">
+                        <div class="text-[9px] uppercase font-bold opacity-60">Effort</div>
+                        <div class="text-xl font-black" id="total-hrs">0h</div>
+                    </div>
+                    <div class="bg-green-500/20 backdrop-blur-md p-3 rounded-lg border border-green-400/30 text-center">
+                        <div class="text-[9px] uppercase font-bold text-green-200">Done</div>
+                        <div class="text-xl font-black" id="done-hrs">0h</div>
+                    </div>
+                    <div class="bg-orange-500/20 backdrop-blur-md p-3 rounded-lg border border-orange-400/30 text-center">
+                        <div class="text-[9px] uppercase font-bold text-orange-200">Left</div>
+                        <div class="text-xl font-black" id="remaining-hrs">0h</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-4 grid grid-cols-2 gap-4 border-t border-white/10 pt-4 text-xs no-print">
+                <input type="text" id="cust-name" oninput="saveData()" placeholder="Customer Name" class="bg-white/10 border border-white/20 rounded-md px-3 py-2 placeholder:text-red-200 outline-none focus:bg-white/20 transition-all">
+                <input type="text" id="eng-name" oninput="saveData()" placeholder="Lead Architect" class="bg-white/10 border border-white/20 rounded-md px-3 py-2 placeholder:text-red-200 outline-none focus:bg-white/20 transition-all">
+            </div>
+        </header>
+
+        <div class="p-4 bg-white border-b flex justify-between items-center no-print">
+            <div class="flex gap-2">
+                <button onclick="exportJSON()" class="text-[10px] bg-slate-50 border border-slate-200 px-4 py-2 rounded-md hover:bg-slate-100 font-bold uppercase transition-all">Export Data</button>
+                <button onclick="document.getElementById('importFile').click()" class="text-[10px] bg-slate-50 border border-slate-200 px-4 py-2 rounded-md hover:bg-slate-100 font-bold uppercase transition-all">Import JSON</button>
+                <input type="file" id="importFile" class="hidden" onchange="importJSON(event)">
+                <button onclick="clearAllData()" class="text-[10px] bg-red-50 text-red-600 border border-red-100 px-4 py-2 rounded-md hover:bg-red-100 font-bold uppercase transition-all">Clear All</button>
+            </div>
+            <button onclick="window.print()" class="bg-slate-900 text-white px-6 py-2 rounded-md text-sm font-bold shadow-lg hover:bg-black transition-all flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+                Export Report
+            </button>
+        </div>
+
+        <div id="checklist-render" class="p-6 space-y-8"></div>
+
+        <footer class="p-8 bg-slate-50 border-t text-center">
+            <p class="text-[10px] text-slate-400 tracking-[0.3em] uppercase font-black">OCP Deployment Engine v6.0 • Local Persistence Enabled</p>
+        </footer>
+    </div>
+
+    <script>
+        const statusConfig = {
+            'pending': { label: 'Pending', class: 'pill-pending', row: 'row-pending', icon: '○' },
+            'progress': { label: 'In Progress', class: 'pill-progress', row: 'row-progress', icon: '●' },
+            'blocked': { label: 'Blocked', class: 'pill-blocked', row: 'row-blocked', icon: '!' },
+            'completed': { label: 'Completed', class: 'pill-completed', row: 'row-completed', icon: '✓' }
+        };
+
+        const sections = [
+            { title: "1. Planning & Approvals", items: [
+                { id: "p1", task: "OpenShift Version", hours: 2, details: "Define target OCP version (e.g. 4.16)." },
+                { id: "p2", task: "Cluster Sizing", hours: 2, details: "Three node control plane or compact." },
+                { id: "p3", task: "Platform Selection", hours: 2, details: "Bare metal vs Virtual (vSphere/RHV/etc)." },
+                { id: "p4", task: "Capacity Planning", hours: 3, details: "CPU, Memory, and Disk allocations." },
+                { id: "p5", task: "Storage Requirements", hours: 2, details: "Etcd and workload storage IOPS/Capacity." },
+                { id: "p6", task: "CSI Backend Selection", hours: 2, details: "Selection of storage provider." },
+                { id: "p7", task: "Network Design", hours: 4, details: "CIDR ranges, MTU, VLANs." },
+                { id: "p8", task: "DNS Design", hours: 3, details: "Forward and reverse records strategy." },
+                { id: "p9", task: "Load Balancer Design", hours: 3, details: "API and Ingress VIP strategy." },
+                { id: "p10", task: "Time Sync Design", hours: 1, details: "Identify internal NTP sources." },
+                { id: "p11", task: "CA Strategy", hours: 2, details: "Root/Intermediate CA trust chain." },
+                { id: "p12", task: "Arch Validation", hours: 4, details: "Disconnected architecture approval." },
+                { id: "p13", task: "Security & Change Records", hours: 8, details: "Formal approval and documentation." },
+                { id: "p14", task: "RBAC & Access Plan", hours: 3, details: "Identify admins and access model." },
+                { id: "p15", task: "Backup & DR", hours: 4, details: "Define RTO/RPO and toolset." },
+                { id: "p16", task: "Naming Standards", hours: 1, details: "Node and cluster naming conventions." },
+                { id: "p17", task: "IPAM", hours: 2, details: "IP address management and reservation." },
+                { id: "p18", task: "Compliance / FIPS", hours: 2, details: "Check FIPS 140-2 requirements." }
+            ]},
+            { title: "2. Bastion Host Preparation", items: [
+                { id: "b1", task: "OS & Sizing", hours: 4, details: "Select RHEL 8/9 and provision resources." },
+                { id: "b2", task: "OS Hardening", hours: 4, details: "Apply security benchmarks." },
+                { id: "b3", task: "Network Lockdown", hours: 2, details: "Disable direct internet access." },
+                { id: "b4", task: "Mirror Access", hours: 2, details: "Outbound access only to Red Hat mirrors." },
+                { id: "b5", task: "Package Install", hours: 2, details: "oc, kubectl, podman, skopeo, jq, yq, httpd." },
+                { id: "b6", task: "SSH & Firewall", hours: 2, details: "Configure keys and firewalld rules." },
+                { id: "b7", task: "Trust & Chrony", hours: 1, details: "Configure trust bundle and NTP." },
+                { id: "b8", task: "Local Services", hours: 2, details: "Configure DNS resolver and local LB." }
+            ]},
+            { title: "3. Mirror Registry Lifecycle", items: [
+                { id: "m1", task: "Registry Design", hours: 3, details: "Product selection and Hostname/IP." },
+                { id: "m2", task: "Storage Backend", hours: 4, details: "Provision disk for ~500GB content." },
+                { id: "m3", task: "TLS & Auth Design", hours: 3, details: "Certificates and credentials strategy." },
+                { id: "m4", task: "Registry Deployment", hours: 6, details: "Install software and configure volumes." },
+                { id: "m5", task: "GC & Mirrors", hours: 2, details: "Configure garbage collection and upstream mirrors." },
+                { id: "m6", task: "Verification", hours: 2, details: "Test push/pull and document creds." }
+            ]},
+            { title: "4. Disconnected Content Prep", items: [
+                { id: "c1", task: "Pull Secret Merge", hours: 1, details: "Merge RH pull secret with local registry." },
+                { id: "c2", task: "Mirror Release Images", hours: 8, details: "Use oc-mirror for OCP release sync." },
+                { id: "c3", task: "Mirror Operator Catalogs", hours: 12, details: "Sync full Red Hat operator indexes." },
+                { id: "c4", task: "Mirror RHCOS", hours: 2, details: "ISO, kernel, and initramfs artifacts." },
+                { id: "c5", task: "Validation", hours: 4, details: "Verify digests and completeness." }
+            ]},
+            { title: "5. Network Services Setup", items: [
+                { id: "n1", task: "DNS Installation", hours: 4, details: "API, Ingress, etcd, and Reverse records." },
+                { id: "n2", task: "Load Balancer Install", hours: 6, details: "HAProxy/Keepalived for API and Apps." },
+                { id: "n3", task: "MTU Validation", hours: 2, details: "Consistency across nodes and switch." }
+            ]},
+            { title: "6. Node Provisioning & OS", items: [
+                { id: "o1", task: "Hardware/VM Setup", hours: 8, details: "BIOS/Firmware, UEFI, MAC Inventory." },
+                { id: "o2", task: "RHCOS Preparation", hours: 4, details: "Custom ignition embeds, SSH, Kernal args." },
+                { id: "o3", task: "FIPS/Trust Bundle", hours: 2, details: "Apply compliance and CA trust during boot." }
+            ]},
+            { title: "7. Install Config & Cluster Boot", items: [
+                { id: "i1", task: "Install-Config YAML", hours: 3, details: "IDMS, Trust Bundle, Proxy: None." },
+                { id: "i2", task: "Ignition Generation", hours: 2, details: "Generate and secure ignition files." },
+                { id: "i3", task: "Cluster Boot", hours: 12, details: "Bootstrap, Control Plane, Workers." },
+                { id: "i4", task: "Installer Monitor", hours: 4, details: "Wait-for bootstrap-complete and install-complete." },
+                { id: "i5", task: "CSR Approval", hours: 2, details: "Approve all pending node certificates." }
+            ]},
+            { title: "8. Post-Install Validation", items: [
+                { id: "v1", task: "Health Check", hours: 4, details: "CO status, Node readiness, etcd health." },
+                { id: "v2", task: "Network Validation", hours: 2, details: "DNS, Ingress, API, and NTP sync check." },
+                { id: "v3", task: "Image Pull Test", hours: 2, details: "Verify pulls from local air-gap registry." }
+            ]},
+            { title: "9. Storage & Operators", items: [
+                { id: "s1", task: "Internal Registry", hours: 4, details: "Storage PVC and internal routes." },
+                { id: "s2", task: "CSI Configuration", hours: 6, details: "Deploy driver, StorageClasses, test PVCs." },
+                { id: "s3", task: "Operator Installation", hours: 6, details: "Mirrored catalogs and healthy deployment." }
+            ]},
+            { title: "10. Security & Logging", items: [
+                { id: "sl1", task: "RBAC & SCC", hours: 4, details: "Policy configuration and user access." },
+                { id: "sl2", task: "Logging & Monitoring", hours: 8, details: "Loki/Elasticsearch, Alertmanager, storage." }
+            ]},
+            { title: "11. Day 2 & Handover", items: [
+                { id: "h1", task: "Backup & Recovery", hours: 6, details: "etcd backup tests and DR documentation." },
+                { id: "h2", task: "Final Handover", hours: 12, details: "As-builts, IPs, Mirror process, Upgrades." }
+            ]}
+        ];
+
+        function toggleSection(idx) {
+            const content = document.getElementById(`section-content-${idx}`);
+            const chevron = document.getElementById(`chevron-${idx}`);
+            content.classList.toggle('hidden');
+            chevron.style.transform = content.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(180deg)';
+        }
+
+        function toggleStatus(id) {
+            const keys = Object.keys(statusConfig);
+            const btn = document.getElementById(`status-btn-${id}`);
+            const currentStatus = btn.dataset.status;
+            const nextStatus = keys[(keys.indexOf(currentStatus) + 1) % keys.length];
+            
+            if (nextStatus === 'completed') document.getElementById(id).checked = true;
+            else if (currentStatus === 'completed') document.getElementById(id).checked = false;
+            
+            applyStatusUI(id, nextStatus);
+            update();
+        }
+
+        function applyStatusUI(id, status) {
+            const btn = document.getElementById(`status-btn-${id}`);
+            const row = document.getElementById(`row-${id}`);
+            const cfg = statusConfig[status];
+            btn.dataset.status = status;
+            btn.innerHTML = `<span>${cfg.icon}</span> ${cfg.label}`;
+            btn.className = `status-pill no-print ${cfg.class}`;
+            row.className = `transition-all duration-300 ${cfg.row}`;
+        }
+
+        function render() {
+            const container = document.getElementById('checklist-render');
+            container.innerHTML = sections.map((section, sIdx) => `
+                <div class="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
+                    <div class="bg-slate-50 border-b px-5 py-3 flex justify-between items-center cursor-pointer hover:bg-slate-100 transition-colors" onclick="toggleSection(${sIdx})">
+                        <div class="flex items-center gap-3">
+                            <svg id="chevron-${sIdx}" class="w-4 h-4 text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                            <span class="text-sm font-black text-slate-700 uppercase tracking-widest">${section.title}</span>
+                        </div>
+                        <div class="flex items-center gap-4 no-print">
+                            <input type="text" id="res-${sIdx}" onclick="event.stopPropagation()" oninput="saveData()" placeholder="Assignee" class="text-[10px] border border-slate-200 px-3 py-1 rounded-full w-28 outline-none focus:border-red-400">
+                            <span class="text-[10px] font-mono font-bold text-slate-400 bg-white px-3 py-1 rounded-full border border-slate-100" id="count-${sIdx}">0 / ${section.items.length}</span>
+                        </div>
+                    </div>
+                    <div id="section-content-${sIdx}" class="section-content">
+                        <table class="w-full text-left text-[11px]">
+                            <tbody class="divide-y divide-slate-100">
+                                ${section.items.map(item => `
+                                    <tr id="row-${item.id}">
+                                        <td class="p-4 w-12 text-center align-top no-print">
+                                            <label class="cursor-pointer">
+                                                <input type="checkbox" id="${item.id}" data-hrs="${item.hours}" class="sr-only checkbox-custom" onchange="syncCheckWithStatus('${item.id}')">
+                                                <div class="w-5 h-5 border-2 border-slate-200 rounded-md flex items-center justify-center transition-all">
+                                                    <svg class="w-3 h-3 text-white hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="4"><path d="M5 13l4 4L19 7"></path></svg>
+                                                </div>
+                                            </label>
+                                        </td>
+                                        <td class="p-4 w-1/3 align-top">
+                                            <div class="flex flex-col gap-3">
+                                                <div id="status-btn-${item.id}" data-status="pending" onclick="toggleStatus('${item.id}')"></div>
+                                                <div>
+                                                    <div class="font-black text-slate-800 text-[12px]">${item.task}</div>
+                                                    <div class="text-slate-400 mt-1 leading-relaxed">${item.details}</div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td class="p-4 w-16 text-center font-mono text-red-600 font-bold align-top text-[12px]">${item.hours}h</td>
+                                        <td class="p-4 align-top">
+                                            <textarea id="note-${item.id}" oninput="saveData()" placeholder="Add technical notes, commands, or hurdles..." 
+                                                class="w-full bg-slate-50/50 border border-slate-100 p-3 rounded-lg text-[10px] text-slate-600 outline-none resize-none transition-all h-20 focus:h-40 focus:bg-white focus:border-red-100 focus:shadow-inner"></textarea>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `).join('');
+            loadData();
+        }
+
+        function syncCheckWithStatus(id) {
+            const isChecked = document.getElementById(id).checked;
+            applyStatusUI(id, isChecked ? 'completed' : 'pending');
+            update();
+        }
+
+        function update() {
+            let totalHrs = 0, doneHrs = 0, totalTasks = 0, checkedTasks = 0;
+            sections.forEach((s, sIdx) => {
+                let sChecked = 0;
+                s.items.forEach(i => {
+                    totalTasks++;
+                    totalHrs += i.hours;
+                    if(document.getElementById(i.id).checked) {
+                        sChecked++;
+                        checkedTasks++;
+                        doneHrs += i.hours;
+                    }
+                });
+                document.getElementById(`count-${sIdx}`).innerText = `${sChecked} / ${s.items.length}`;
+            });
+            document.getElementById('overall-progress').innerText = `${Math.round((checkedTasks / totalTasks) * 100)}%`;
+            document.getElementById('total-hrs').innerText = `${totalHrs}h`;
+            document.getElementById('done-hrs').innerText = `${doneHrs}h`;
+            document.getElementById('remaining-hrs').innerText = `${totalHrs - doneHrs}h`;
+            saveData();
+        }
+
+        function saveData() {
+            const data = {
+                cust: document.getElementById('cust-name').value,
+                eng: document.getElementById('eng-name').value,
+                states: {}
+            };
+            sections.forEach((s, sIdx) => {
+                data.states[`res-${sIdx}`] = document.getElementById(`res-${sIdx}`).value;
+                s.items.forEach(i => {
+                    data.states[i.id] = {
+                        c: document.getElementById(i.id).checked,
+                        n: document.getElementById(`note-${i.id}`).value,
+                        s: document.getElementById(`status-btn-${i.id}`).dataset.status
+                    };
+                });
+            });
+            localStorage.setItem('ocp_enterprise_v6', JSON.stringify(data));
+        }
+
+        function loadData() {
+            const raw = localStorage.getItem('ocp_enterprise_v6');
+            if(!raw) {
+                sections.forEach(s => s.items.forEach(i => applyStatusUI(i.id, 'pending')));
+                return update();
+            }
+            const data = JSON.parse(raw);
+            document.getElementById('cust-name').value = data.cust || '';
+            document.getElementById('eng-name').value = data.eng || '';
+            sections.forEach((s, sIdx) => {
+                if(data.states[`res-${sIdx}`]) document.getElementById(`res-${sIdx}`).value = data.states[`res-${sIdx}`];
+                s.items.forEach(i => {
+                    const state = data.states[i.id];
+                    if(state) {
+                        document.getElementById(i.id).checked = state.c;
+                        document.getElementById(`note-${i.id}`).value = state.n || '';
+                        applyStatusUI(i.id, state.s || 'pending');
+                    }
+                });
+            });
+            update();
+        }
+
+        function exportJSON() {
+            const data = localStorage.getItem('ocp_enterprise_v6');
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(new Blob([data], {type: 'application/json'}));
+            a.download = `OCP_Enterprise_Backup.json`;
+            a.click();
+        }
+
+        function importJSON(event) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                localStorage.setItem('ocp_enterprise_v6', e.target.result);
+                location.reload();
+            };
+            reader.readAsText(event.target.files[0]);
+        }
+
+        function clearAllData() {
+            if(confirm("This will permanently delete your progress. Continue?")) {
+                localStorage.removeItem('ocp_enterprise_v6');
+                location.reload();
+            }
+        }
+
+        render();
+    </script>
+</body>
+</html>

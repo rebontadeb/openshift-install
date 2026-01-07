@@ -4,20 +4,13 @@ This comprehensive guide will walk you through creating a mirror registry for Op
 
 ## Two Installation Methods
 
-This guide covers **TWO methods**:
+This guide covers :
 
-### Method A: Using mirror-registry CLI (RECOMMENDED - Automated)
+### Method : Using mirror-registry CLI (RECOMMENDED - Automated)
 - **Easier**: Automated setup with single command
 - **Faster**: Quick deployment (5-10 minutes for registry setup)
 - **Red Hat Supported**: Official tool from Red Hat
 - **Best for**: Most users, especially beginners
-
-### Method B: Manual Podman Setup (Advanced)
-- **More Control**: Fine-grained configuration
-- **Flexible**: Custom configurations possible
-- **Best for**: Advanced users who need specific customizations
-
-**We recommend Method A for most users.**
 
 ---
 
@@ -138,7 +131,7 @@ sudo -i -u mirror-user
 
 ---
 
-# METHOD A: Using mirror-registry CLI (RECOMMENDED)
+# METHOD : Using mirror-registry CLI (RECOMMENDED)
 
 This is the **recommended method** - automated and officially supported by Red Hat.
 
@@ -148,7 +141,7 @@ This is the **recommended method** - automated and officially supported by Red H
 
 ```bash
 sudo dnf update -y
-sudo dnf install -y podman httpd-tools wget tar jq
+sudo dnf install -y podman httpd-tools wget tar jq 
 ```
 
 ---
@@ -157,7 +150,9 @@ sudo dnf install -y podman httpd-tools wget tar jq
 
 ### 2.1 Download mirror-registry
 ```bash
-cd ${REGISTRY_BASE_PATH}
+mkdir -p  ${REGISTRY_BASE_PATH}/mirror-registry-binary
+export MIRROR_REGISTRY_BASE="${REGISTRY_BASE_PATH}/mirror-registry-binary"
+cd ${MIRROR_REGISTRY_BASE}
 wget https://mirror.openshift.com/pub/cgw/mirror-registry/latest/mirror-registry-amd64.tar.gz
 ```
 
@@ -171,6 +166,12 @@ chmod +x mirror-registry
 ```bash
 ./mirror-registry --version
 ```
+
+### 2.4 Remove the TAR file
+```bash
+rm -f mirror-registry-amd64.tar.gz
+```
+
 
 ---
 
@@ -422,6 +423,42 @@ podman login registry.redhat.io --authfile ${REGISTRY_BASE_PATH}/mirror/pull-sec
 mkdir -p ${REGISTRY_BASE_PATH}/mirror/oc-mirror-workspace
 ```
 
+### 8.1.1 Before Creating ImageSetConfiguration , We can check all catalog Items
+
+
+- 1. Red Hat Operators (Primary Catalog) : registry.redhat.io/redhat/redhat-operator-index:v4.19
+- 2. Certified Operators : registry.redhat.io/redhat/certified-operator-index:v4.19
+- 3. Community Operators : registry.redhat.io/redhat/community-operator-index:v4.19
+- 4. Red Hat Marketplace Operators : registry.redhat.io/redhat/redhat-marketplace-index:v4.19
+
+
+  ### List All Available Operators First
+  ```
+  wget https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/latest/opm-linux.tar.gz
+  tar -xvf opm-linux.tar.gz
+  sudo mv opm /usr/local/bin/
+
+  # List all operators in the catalog
+  oc-mirror list operators --catalog=registry.redhat.io/redhat/redhat-operator-index:v4.19
+  ```
+
+
+
+```
+# Red Hat Operators
+oc-mirror list operators --catalog=registry.redhat.io/redhat/redhat-operator-index:v4.19
+
+# Certified Operators
+oc-mirror list operators --catalog=registry.redhat.io/redhat/certified-operator-index:v4.19
+
+# Community Operators
+oc-mirror list operators --catalog=registry.redhat.io/redhat/community-operator-index:v4.19
+
+# Marketplace Operators
+oc-mirror list operators --catalog=registry.redhat.io/redhat/redhat-marketplace-index:v4.19
+```
+
+
 ### 8.2 Create Comprehensive ImageSetConfiguration
 
 ```bash
@@ -591,8 +628,19 @@ cd ${REGISTRY_BASE_PATH}/mirror
 export REGISTRY_AUTH_FILE=${REGISTRY_BASE_PATH}/mirror/pull-secret.json
 
 oc-mirror --config=${IMAGESET_CONFIG} \
-  docker://${LOCAL_REGISTRY} \
+  docker://${LOCAL_REGISTRY}/ocp4/openshift4 \
+  --dest-skip-tls \  
+  --continue-on-error \
+  --skip-pruning
+```
+
+**IMPORTANT**: Or On a Slower network:
+
+```
+oc-mirror --config=${IMAGESET_CONFIG} \
+  docker://${LOCAL_REGISTRY}/ocp4/openshift4 \
   --dest-skip-tls \
+  --max-per-registry=3 \
   --continue-on-error \
   --skip-pruning
 ```
