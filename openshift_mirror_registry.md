@@ -862,14 +862,15 @@ hosts:
             next-hop-address: 192.168.1.1
             next-hop-interface: ens192
             table-id: 254
-  
-  - hostname: master-1
-    role: master
+
+  # Infrastructure Nodes
+  - hostname: infra-0
+    role: worker
     rootDeviceHints:
       deviceName: /dev/sda
     interfaces:
       - name: ens192
-        macAddress: "00:50:56:00:00:02"
+        macAddress: "00:50:56:00:00:04"
     networkConfig:
       interfaces:
         - name: ens192
@@ -878,7 +879,7 @@ hosts:
           ipv4:
             enabled: true
             address:
-              - ip: 192.168.1.21
+              - ip: 192.168.1.25
                 prefix-length: 24
             dhcp: false
       dns-resolver:
@@ -891,36 +892,9 @@ hosts:
             next-hop-address: 192.168.1.1
             next-hop-interface: ens192
             table-id: 254
-  
-  - hostname: master-2
-    role: master
-    rootDeviceHints:
-      deviceName: /dev/sda
-    interfaces:
-      - name: ens192
-        macAddress: "00:50:56:00:00:03"
-    networkConfig:
-      interfaces:
-        - name: ens192
-          type: ethernet
-          state: up
-          ipv4:
-            enabled: true
-            address:
-              - ip: 192.168.1.22
-                prefix-length: 24
-            dhcp: false
-      dns-resolver:
-        config:
-          server:
-            - 192.168.1.1
-      routes:
-        config:
-          - destination: 0.0.0.0/0
-            next-hop-address: 192.168.1.1
-            next-hop-interface: ens192
-            table-id: 254
-  
+    nodeLabels:
+      node-role.kubernetes.io/infra: ""
+
   - hostname: worker-0
     role: worker
     rootDeviceHints:
@@ -950,34 +924,6 @@ hosts:
             next-hop-interface: ens192
             table-id: 254
   
-  - hostname: worker-1
-    role: worker
-    rootDeviceHints:
-      deviceName: /dev/sda
-    interfaces:
-      - name: ens192
-        macAddress: "00:50:56:00:00:05"
-    networkConfig:
-      interfaces:
-        - name: ens192
-          type: ethernet
-          state: up
-          ipv4:
-            enabled: true
-            address:
-              - ip: 192.168.1.31
-                prefix-length: 24
-            dhcp: false
-      dns-resolver:
-        config:
-          server:
-            - 192.168.1.1
-      routes:
-        config:
-          - destination: 0.0.0.0/0
-            next-hop-address: 192.168.1.1
-            next-hop-interface: ens192
-            table-id: 254
 EOF
 ```
 
