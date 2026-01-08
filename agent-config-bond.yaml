@@ -8,40 +8,6 @@ hosts:
     role: master
     rootDeviceHints:
       deviceName: /dev/sda
-    interfaces:
-      - name: bond0
-        type: bond
-        state: up
-        ipv4:
-          enabled: true
-          address:
-            - ip: 192.168.1.10
-              prefix-length: 24
-          dhcp: false
-        ipv6:
-          enabled: false
-        link-aggregation:
-          mode: 802.3ad
-          options:
-            miimon: "100"
-            lacp_rate: "fast"
-          port:
-            - ens3
-            - ens4
-      - name: ens3
-        type: ethernet
-        state: up
-        ipv4:
-          enabled: false
-        ipv6:
-          enabled: false
-      - name: ens4
-        type: ethernet
-        state: up
-        ipv4:
-          enabled: false
-        ipv6:
-          enabled: false
     networkConfig:
       interfaces:
         - name: bond0
@@ -66,6 +32,7 @@ hosts:
         - name: ens3
           type: ethernet
           state: up
+          mac-address: "52:54:00:12:34:56"
           ipv4:
             enabled: false
           ipv6:
@@ -73,6 +40,7 @@ hosts:
         - name: ens4
           type: ethernet
           state: up
+          mac-address: "52:54:00:12:34:57"
           ipv4:
             enabled: false
           ipv6:
@@ -91,51 +59,13 @@ hosts:
     role: worker
     rootDeviceHints:
       deviceName: /dev/sda
-    interfaces:
-      - name: bond0
-        type: bond
-        state: up
-        ipv4:
-          enabled: true
-          address:
-            - ip: 192.168.1.20
-              prefix-length: 24
-          dhcp: false
-        ipv6:
-          enabled: false
-        link-aggregation:
-          mode: 802.3ad
-          options:
-            miimon: "100"
-            lacp_rate: "fast"
-          port:
-            - ens3
-            - ens4
-      - name: ens3
-        type: ethernet
-        state: up
-        ipv4:
-          enabled: false
-        ipv6:
-          enabled: false
-      - name: ens4
-        type: ethernet
-        state: up
-        ipv4:
-          enabled: false
-        ipv6:
-          enabled: false
     networkConfig:
       interfaces:
         - name: bond0
           type: bond
           state: up
           ipv4:
-            enabled: true
-            address:
-              - ip: 192.168.1.20
-                prefix-length: 24
-            dhcp: false
+            enabled: false
           ipv6:
             enabled: false
           link-aggregation:
@@ -146,9 +76,24 @@ hosts:
             port:
               - ens3
               - ens4
+        - name: bond0.100
+          type: vlan
+          state: up
+          vlan:
+            base-iface: bond0
+            id: 100
+          ipv4:
+            enabled: true
+            address:
+              - ip: 192.168.1.20
+                prefix-length: 24
+            dhcp: false
+          ipv6:
+            enabled: false
         - name: ens3
           type: ethernet
           state: up
+          mac-address: "52:54:00:12:34:58"
           ipv4:
             enabled: false
           ipv6:
@@ -156,6 +101,7 @@ hosts:
         - name: ens4
           type: ethernet
           state: up
+          mac-address: "52:54:00:12:34:59"
           ipv4:
             enabled: false
           ipv6:
@@ -168,4 +114,4 @@ hosts:
         config:
           - destination: 0.0.0.0/0
             next-hop-address: 192.168.1.1
-            next-hop-interface: bond0
+            next-hop-interface: bond0.100
