@@ -40,10 +40,11 @@ metadata:
   annotations:
     k8s.v1.cni.cncf.io/resourceName: bridge.network.kubevirt.io/br-ex
 spec:
-  config: '{
-    "cniVersion": "0.3.1",
-    "name": "bridge-network",
-    "type": "cnv-bridge",
-    "bridge": "br-ex"
-  }'
+  config: |
+    {
+      "cniVersion": "0.3.1",
+      "name": "bridge-network",
+      "type": "cnv-bridge",
+      "bridge": "br-ex"
+    }
 ```
