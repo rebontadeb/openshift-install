@@ -366,3 +366,31 @@ ip route show | grep 192.168.100
 | `nmstate-vlan-bridge.yaml` | NNCP — creates `enp2s0.100` VLAN and `br1` Linux bridge |
 | `nad-vlan100.yaml` | NetworkAttachmentDefinition — exposes `br1` to VMs |
 | `vm-static.yaml` | VirtualMachine with static IP on secondary NIC via cloud-init |
+
+
+
+
+```yaml
+# nmstate-vlan-bridge.yaml
+apiVersion: nmstate.io/v1
+kind: NodeNetworkConfigurationPolicy
+metadata:
+  name: br1-bridge
+spec:
+  nodeSelector:
+    node-role.kubernetes.io/master: ""
+  desiredState:
+    interfaces:
+      - name: br1
+        description: Linux bridge on enp113s0f1 for VM secondary network
+        type: linux-bridge
+        state: up
+        ipv4:
+          enabled: false
+        bridge:
+          options:
+            stp:
+              enabled: false
+          port:
+            - name: enp113s0f1
+```
