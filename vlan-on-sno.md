@@ -394,3 +394,22 @@ spec:
           port:
             - name: enp113s0f1
 ```
+---
+```yaml
+# nad-br1.yaml
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: br1-network
+  namespace: default
+spec:
+  config: |
+    {
+      "cniVersion": "0.3.1",
+      "name": "br1-network",
+      "type": "bridge",
+      "bridge": "br1",
+      "macspoofchk": true,
+      "ipam": {}
+    }
+```
